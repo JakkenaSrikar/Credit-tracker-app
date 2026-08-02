@@ -23,34 +23,60 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
-# Unicode Font download for Devanagari (Hindi) and Telugu PDF support
+# Unicode Fonts download for Devanagari (Hindi) and Telugu PDF support
 FONT_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(FONT_DIR, "FreeSans.ttf")
-FONT_NAME = 'Helvetica'
+TELUGU_FONT_PATH = os.path.join(FONT_DIR, "NotoSansTelugu-Regular.ttf")
 
-def download_unicode_font():
-    global FONT_NAME
+FONT_NAME = 'Helvetica'
+TELUGU_FONT_NAME = 'Helvetica'
+
+def download_unicode_fonts():
+    global FONT_NAME, TELUGU_FONT_NAME
+    
+    # 1. Download FreeSans (Hindi/English)
     if not os.path.exists(FONT_PATH):
-        print("Downloading FreeSans Unicode font for Hindi/Telugu PDF support...")
+        print("Downloading FreeSans Unicode font...")
         url = "https://raw.githubusercontent.com/evanw/tfdump/master/FreeSans.ttf"
         try:
             import urllib.request
             urllib.request.urlretrieve(url, FONT_PATH)
-            print("Unicode font downloaded successfully.")
+            print("FreeSans font downloaded successfully.")
         except Exception as e:
             print(f"Failed to download FreeSans font: {e}")
-            return
             
+    # 2. Download Noto Sans Telugu
+    if not os.path.exists(TELUGU_FONT_PATH):
+        print("Downloading NotoSansTelugu font...")
+        url = "https://raw.githubusercontent.com/googlefonts/noto-fonts/main/hinted/ttf/NotoSansTelugu/NotoSansTelugu-Regular.ttf"
+        try:
+            import urllib.request
+            urllib.request.urlretrieve(url, TELUGU_FONT_PATH)
+            print("NotoSansTelugu font downloaded successfully.")
+        except Exception as e:
+            print(f"Failed to download Telugu font: {e}")
+
+    # Register FreeSans
     try:
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
         pdfmetrics.registerFont(TTFont('FreeSans', FONT_PATH))
         FONT_NAME = 'FreeSans'
-        print("Unicode font registered successfully.")
+        print("FreeSans font registered successfully.")
     except Exception as e:
         print(f"Could not register FreeSans font: {e}")
 
-download_unicode_font()
+    # Register NotoSansTelugu
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        pdfmetrics.registerFont(TTFont('NotoSansTelugu', TELUGU_FONT_PATH))
+        TELUGU_FONT_NAME = 'NotoSansTelugu'
+        print("NotoSansTelugu font registered successfully.")
+    except Exception as e:
+        print(f"Could not register NotoSansTelugu font: {e}")
+
+download_unicode_fonts()
 
 # Initialize database tables
 Base.metadata.create_all(bind=engine)
@@ -1121,6 +1147,95 @@ def export_pdf(
 
     store = db.query(Store).filter(Store.id == current_user.store_id).first()
     
+    # Shop reports translations
+    shop_trans = {
+        "en": {
+            "title_suffix": "Udhara Ledger Report",
+            "date": "Date",
+            "time": "Generated Local Time",
+            "summary_title": "Today's Summary Metrics",
+            "today_credit": "Today's Credit Given:",
+            "today_payment": "Today's Payments Received:",
+            "total_ledger": "Total Ledger Due:",
+            "active_accounts": "Active Customer Accounts:",
+            "today_entries": "Today's Transaction Entries",
+            "no_entries": "No transaction logs recorded today.",
+            "cust_name": "Customer Name",
+            "type": "Type",
+            "amount": "Amount",
+            "note": "Note / Description",
+            "logged_time": "Logged Time",
+            "entire_balances": "Entire Outstanding Ledger Dues",
+            "no_customers": "No customers registered.",
+            "phone": "Phone Number",
+            "status": "Status",
+            "due": "Due Amount",
+            "owes": "Owes Shop",
+            "overpaid": "Overpaid",
+            "settled": "Settled"
+        },
+        "te": {
+            "title_suffix": "ఉధార లెడ్జర్ నివేదిక",
+            "date": "తేదీ",
+            "time": "జనరేట్ చేసిన సమయం",
+            "summary_title": "ఈరోజు సారాంశం",
+            "today_credit": "ఈరోజు ఇచ్చిన అప్పు:",
+            "today_payment": "ఈరోజు వసూలైన మొత్తం:",
+            "total_ledger": "మొత్తం బకాయి నిల్వ:",
+            "active_accounts": "యాక్టివ్ ఖాతాల సంఖ్య:",
+            "today_entries": "ఈరోజు లావాదేవీలు",
+            "no_entries": "ఈరోజు ఎటువంటి లావాదేవీలు నమోదు కాలేదు.",
+            "cust_name": "కస్టమర్ పేరు",
+            "type": "రకం",
+            "amount": "మొత్తం",
+            "note": "వివరణ / వస్తువు వివరాలు",
+            "logged_time": "సమయం",
+            "entire_balances": "కస్టమర్ల మొత్తం బకాయిల పట్టిక",
+            "no_customers": "కస్టమర్లు ఎవరూ లేరు.",
+            "phone": "ఫోన్ నెంబర్",
+            "status": "స్థితి",
+            "due": "మొత్తం బకాయి",
+            "owes": "బకాయి ఉన్నారు",
+            "overpaid": "అడ్వాన్స్ చెల్లించారు",
+            "settled": "సరిపోయింది"
+        },
+        "hi": {
+            "title_suffix": "उधार खाता रिपोर्ट",
+            "date": "तारीख",
+            "time": "रिपोर्ट का समय",
+            "summary_title": "आज का सारांश",
+            "today_credit": "आज दिया गया उधार:",
+            "today_payment": "आज मिला भुगतान:",
+            "total_ledger": "कुल खाता बकाया:",
+            "active_accounts": "सक्रिय ग्राहकों की संख्या:",
+            "today_entries": "आज के लेन-देन",
+            "no_entries": "आज कोई लेन-देन दर्ज नहीं किया गया।",
+            "cust_name": "ग्राहक का नाम",
+            "type": "प्रकार",
+            "amount": "राशि",
+            "note": "विवरण / सामान",
+            "logged_time": "समय",
+            "entire_balances": "सभी बकाया खातों की सूची",
+            "no_customers": "कोई ग्राहक पंजीकृत नहीं है।",
+            "phone": "फ़ोन नंबर",
+            "status": "स्थिति",
+            "due": "कुल बकाया",
+            "owes": "बकाया है",
+            "overpaid": "अग्रिम भुगतान",
+            "settled": "समान है"
+        }
+    }
+    
+    st_lang = store.language if store.language in ["en", "te", "hi"] else "en"
+    t = shop_trans[st_lang]
+    
+    # Resolve active font for whole ledger document
+    active_font = FONT_NAME
+    if st_lang == "te":
+        active_font = TELUGU_FONT_NAME
+    elif st_lang == "en":
+        active_font = "Helvetica"
+
     # Create PDF Report
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -1138,6 +1253,7 @@ def export_pdf(
     title_style = ParagraphStyle(
         'DocTitle',
         parent=styles['Heading1'],
+        fontName=active_font,
         fontSize=20,
         leading=24,
         textColor=colors.HexColor("#4F46E5"),
@@ -1146,6 +1262,7 @@ def export_pdf(
     subtitle_style = ParagraphStyle(
         'DocSub',
         parent=styles['Normal'],
+        fontName=active_font,
         fontSize=10,
         leading=12,
         textColor=colors.HexColor("#4B5563"),
@@ -1154,16 +1271,17 @@ def export_pdf(
     section_style = ParagraphStyle(
         'SectionTitle',
         parent=styles['Heading2'],
+        fontName=active_font,
         fontSize=13,
         leading=16,
         textColor=colors.HexColor("#111827"),
         spaceBefore=14,
-        spaceAfter=8,
-        fontName="Helvetica-Bold"
+        spaceAfter=8
     )
     body_style = ParagraphStyle(
         'BodyTextCustom',
         parent=styles['Normal'],
+        fontName=active_font,
         fontSize=9,
         leading=11,
         textColor=colors.HexColor("#374151")
@@ -1171,22 +1289,23 @@ def export_pdf(
     bold_cell = ParagraphStyle(
         'BoldCell',
         parent=styles['Normal'],
+        fontName=active_font,
         fontSize=9,
         leading=11,
-        fontName="Helvetica-Bold",
         textColor=colors.HexColor("#111827")
     )
     header_cell = ParagraphStyle(
         'HeaderCell',
         parent=styles['Normal'],
+        fontName=active_font,
         fontSize=8,
         leading=10,
-        fontName="Helvetica-Bold",
         textColor=colors.white
     )
     table_cell = ParagraphStyle(
         'TableCell',
         parent=styles['Normal'],
+        fontName=active_font,
         fontSize=8,
         leading=10,
         textColor=colors.HexColor("#374151")
@@ -1195,26 +1314,26 @@ def export_pdf(
     elements = []
     
     # Title Header
-    elements.append(Paragraph(f"{store.name} - Udhara Ledger Report", title_style))
-    elements.append(Paragraph(f"Date: {local_now.strftime('%d-%m-%Y')}  |  Generated Local Time: {local_now.strftime('%I:%M %p')}", subtitle_style))
+    elements.append(Paragraph(f"{store.name} - {t['title_suffix']}", title_style))
+    elements.append(Paragraph(f"{t['date']}: {local_now.strftime('%d-%m-%Y')}  |  {t['time']}: {local_now.strftime('%I:%M %p')}", subtitle_style))
     
     # Section 1: Today's Summary Metrics
-    elements.append(Paragraph("Today's Summary Metrics", section_style))
-    total_today_credit = sum(t.amount for t in today_txs if t.type == "credit")
-    total_today_payment = sum(t.amount for t in today_txs if t.type == "payment")
+    elements.append(Paragraph(t["summary_title"], section_style))
+    total_today_credit = sum(tx.amount for tx in today_txs if tx.type == "credit")
+    total_today_payment = sum(tx.amount for tx in today_txs if tx.type == "payment")
     total_outstanding_ledger = sum(c.balance for c in customers if c.balance > 0)
 
     summary_data = [
         [
-            Paragraph("Today's Credit Given:", bold_cell),
+            Paragraph(t["today_credit"], bold_cell),
             Paragraph(f"₹{format_rupees(total_today_credit)}", body_style),
-            Paragraph("Total Ledger Outstanding:", bold_cell),
+            Paragraph(t["total_ledger"], bold_cell),
             Paragraph(f"₹{format_rupees(total_outstanding_ledger)}", body_style)
         ],
         [
-            Paragraph("Today's Payments Received:", bold_cell),
+            Paragraph(t["today_payment"], bold_cell),
             Paragraph(f"₹{format_rupees(total_today_payment)}", body_style),
-            Paragraph("Active Customer Accounts:", bold_cell),
+            Paragraph(t["active_accounts"], bold_cell),
             Paragraph(str(len(customers)), body_style)
         ]
     ]
@@ -1228,26 +1347,27 @@ def export_pdf(
     elements.append(Spacer(1, 10))
 
     # Section 2: Today's Transactions
-    elements.append(Paragraph("Today's Transaction Entries", section_style))
+    elements.append(Paragraph(t["today_entries"], section_style))
     if not today_txs:
-        elements.append(Paragraph("<i>No transaction logs recorded today.</i>", body_style))
+        elements.append(Paragraph(f"<i>{t['no_entries']}</i>", body_style))
     else:
         tx_table_data = [[
-            Paragraph("Customer Name", header_cell),
-            Paragraph("Type", header_cell),
-            Paragraph("Amount", header_cell),
-            Paragraph("Note / Description", header_cell),
-            Paragraph("Logged Time", header_cell)
+            Paragraph(t["cust_name"], header_cell),
+            Paragraph(t["type"], header_cell),
+            Paragraph(t["amount"], header_cell),
+            Paragraph(t["note"], header_cell),
+            Paragraph(t["logged_time"], header_cell)
         ]]
-        for t in today_txs:
-            local_time = t.date + timedelta(minutes=tz_offset)
-            type_color = "#EF4444" if t.type == "credit" else "#10B981"
-            type_text = f"<font color='{type_color}'><b>{t.type.capitalize()}</b></font>"
+        for tx in today_txs:
+            local_time = tx.date + timedelta(minutes=tz_offset)
+            type_lbl = "Credit" if tx.type == "credit" else "Payment"
+            type_color = "#EF4444" if tx.type == "credit" else "#10B981"
+            type_markup = f"<font color='{type_color}'><b>{type_lbl}</b></font>"
             tx_table_data.append([
-                Paragraph(t.customer_name, table_cell),
-                Paragraph(type_text, table_cell),
-                Paragraph(f"₹{format_rupees(t.amount)}", table_cell),
-                Paragraph(t.note or "-", table_cell),
+                Paragraph(tx.customer_name, table_cell),
+                Paragraph(type_markup, table_cell),
+                Paragraph(f"₹{format_rupees(tx.amount)}", table_cell),
+                Paragraph(tx.note or "-", table_cell),
                 Paragraph(local_time.strftime("%I:%M %p"), table_cell)
             ])
         tx_table = Table(tx_table_data, colWidths=[120, 80, 80, 160, 100])
@@ -1263,18 +1383,18 @@ def export_pdf(
     elements.append(Spacer(1, 10))
 
     # Section 3: Entire Udhara Balances
-    elements.append(Paragraph("Entire Outstanding Ledger Balances", section_style))
+    elements.append(Paragraph(t["entire_balances"], section_style))
     if not customers:
-        elements.append(Paragraph("<i>No customers registered.</i>", body_style))
+        elements.append(Paragraph(f"<i>{t['no_customers']}</i>", body_style))
     else:
         cust_table_data = [[
-            Paragraph("Customer Name", header_cell),
-            Paragraph("Phone Number", header_cell),
-            Paragraph("Status", header_cell),
-            Paragraph("Balance", header_cell)
+            Paragraph(t["cust_name"], header_cell),
+            Paragraph(t["phone"], header_cell),
+            Paragraph(t["status"], header_cell),
+            Paragraph(t["due"], header_cell)
         ]]
         for c in customers:
-            status_text = "Owes Shop" if c.balance > 0 else "Overpaid" if c.balance < 0 else "Settled"
+            status_text = t["owes"] if c.balance > 0 else t["overpaid"] if c.balance < 0 else t["settled"]
             bal_color = "#EF4444" if c.balance > 0 else "#10B981" if c.balance < 0 else "#6B7280"
             bal_text = f"<font color='{bal_color}'><b>₹{format_rupees(abs(c.balance))}</b></font>"
             cust_table_data.append([
@@ -1347,7 +1467,7 @@ def export_customer_pdf(
             "customer": "Customer Name",
             "phone": "Phone",
             "store": "Store",
-            "balance": "Current Balance",
+            "balance": "Due Amount",
             "range": "Report Range",
             "today": "Today's Transactions Only",
             "all": "All-time Transaction History",
@@ -1359,6 +1479,7 @@ def export_customer_pdf(
             "payment": "Payment Received",
             "total_credit": "Total Credit",
             "total_payment": "Total Payment",
+            "net_due": "Net Due Amount",
             "owes": "Owes Shop",
             "overpaid": "Overpaid",
             "settled": "Settled",
@@ -1369,7 +1490,7 @@ def export_customer_pdf(
             "customer": "కస్టమర్ పేరు",
             "phone": "ఫోన్ నెంబర్",
             "store": "షాప్ పేరు",
-            "balance": "ప్రస్తుత బకాయి",
+            "balance": "మొత్తం బకాయి",
             "range": "రిపోర్ట్ వ్యవధి",
             "today": "ఈరోజు లావాదేవీలు మాత్రమే",
             "all": "మొత్తం లావాదేవీల చరిత్ర",
@@ -1381,6 +1502,7 @@ def export_customer_pdf(
             "payment": "వసూలు అయింది",
             "total_credit": "మొత్తం అప్పు",
             "total_payment": "మొత్తం చెల్లింపు",
+            "net_due": "నికర బకాయి",
             "owes": "బకాయి ఉన్నారు",
             "overpaid": "అడ్వాన్స్ చెల్లించారు",
             "settled": "సరిపోయింది",
@@ -1391,7 +1513,7 @@ def export_customer_pdf(
             "customer": "ग्राहक का नाम",
             "phone": "फ़ोन नंबर",
             "store": "दुकान का नाम",
-            "balance": "वर्तमान बकाया",
+            "balance": "कुल बकाया",
             "range": "रिपोर्ट अवधि",
             "today": "केवल आज के लेन-देन",
             "all": "कुल खाता इतिहास",
@@ -1403,6 +1525,7 @@ def export_customer_pdf(
             "payment": "भुगतान मिला",
             "total_credit": "कुल उधार",
             "total_payment": "कुल भुगतान",
+            "net_due": "कुल शुद्ध बकाया",
             "owes": "बकाया है",
             "overpaid": "अग्रिम भुगतान",
             "settled": "समान है",
@@ -1413,6 +1536,13 @@ def export_customer_pdf(
     t = translations_dict.get(lang if lang in ["en", "te", "hi"] else "en")
     store = db.query(Store).filter(Store.id == current_user.store_id).first()
     
+    # Resolve active font for customer PDF document
+    active_font = FONT_NAME
+    if lang == "te":
+        active_font = TELUGU_FONT_NAME
+    elif lang == "en":
+        active_font = "Helvetica"
+
     # Create PDF Report
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -1426,11 +1556,11 @@ def export_customer_pdf(
     
     styles = getSampleStyleSheet()
     
-    # Custom styles - using registered TTFont (FreeSans) to support Devanagari and Telugu
+    # Custom styles - using registered TTFont (FreeSans / NotoSansTelugu)
     title_style = ParagraphStyle(
         'CustTitle',
         parent=styles['Heading1'],
-        fontName=FONT_NAME,
+        fontName=active_font,
         fontSize=20,
         leading=24,
         textColor=colors.HexColor("#4F46E5"),
@@ -1439,7 +1569,7 @@ def export_customer_pdf(
     subtitle_style = ParagraphStyle(
         'CustSub',
         parent=styles['Normal'],
-        fontName=FONT_NAME,
+        fontName=active_font,
         fontSize=10,
         leading=12,
         textColor=colors.HexColor("#4B5563"),
@@ -1448,7 +1578,7 @@ def export_customer_pdf(
     section_style = ParagraphStyle(
         'CustSection',
         parent=styles['Heading2'],
-        fontName=FONT_NAME,
+        fontName=active_font,
         fontSize=13,
         leading=16,
         textColor=colors.HexColor("#111827"),
@@ -1458,7 +1588,7 @@ def export_customer_pdf(
     body_style = ParagraphStyle(
         'CustBody',
         parent=styles['Normal'],
-        fontName=FONT_NAME,
+        fontName=active_font,
         fontSize=9,
         leading=11,
         textColor=colors.HexColor("#374151")
@@ -1466,7 +1596,7 @@ def export_customer_pdf(
     bold_cell = ParagraphStyle(
         'CustBoldCell',
         parent=styles['Normal'],
-        fontName=FONT_NAME,
+        fontName=active_font,
         fontSize=9,
         leading=11,
         textColor=colors.HexColor("#111827")
@@ -1474,7 +1604,7 @@ def export_customer_pdf(
     header_cell = ParagraphStyle(
         'CustHeaderCell',
         parent=styles['Normal'],
-        fontName=FONT_NAME,
+        fontName=active_font,
         fontSize=8,
         leading=10,
         textColor=colors.white
@@ -1482,7 +1612,7 @@ def export_customer_pdf(
     table_cell = ParagraphStyle(
         'CustTableCell',
         parent=styles['Normal'],
-        fontName=FONT_NAME,
+        fontName=active_font,
         fontSize=8,
         leading=10,
         textColor=colors.HexColor("#374151")
@@ -1556,12 +1686,14 @@ def export_customer_pdf(
         elements.append(tx_table)
         elements.append(Spacer(1, 10))
         
-        # Totals Summary
+        # Totals Summary with calculations
+        net_due = total_credit - total_payment
         totals_data = [
             [Paragraph(f"<b>{t['total_credit']}:</b>", body_style), Paragraph(f"₹{format_rupees(total_credit)}", body_style)],
-            [Paragraph(f"<b>{t['total_payment']}:</b>", body_style), Paragraph(f"₹{format_rupees(total_payment)}", body_style)]
+            [Paragraph(f"<b>{t['total_payment']}:</b>", body_style), Paragraph(f"₹{format_rupees(total_payment)}", body_style)],
+            [Paragraph(f"<b>{t['net_due']} ({t['total_credit']} - {t['total_payment']}):</b>", bold_cell), Paragraph(f"₹{format_rupees(net_due)}", bold_cell)]
         ]
-        totals_table = Table(totals_data, colWidths=[150, 390])
+        totals_table = Table(totals_data, colWidths=[200, 340])
         totals_table.setStyle(TableStyle([
             ('LINEBELOW', (0,0), (-1,-1), 0.5, colors.HexColor("#E5E7EB")),
             ('PADDING', (0,0), (-1,-1), 4)

@@ -77,6 +77,32 @@ export default function Dashboard({
     }
   };
 
+  const handleExportPDF = async () => {
+    if (!navigator.onLine) {
+      alert("PDF Export requires an active internet connection.");
+      return;
+    }
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/export/pdf`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error("Export failed");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `udhara_ledger_report_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (e) {
+      alert("Failed to export PDF file.");
+    }
+  };
+
   const formatRupees = (paise) => {
     const amountRs = paise / 100.0;
     if (amountRs % 1 === 0) return `₹${intFormat(amountRs)}`;
@@ -147,17 +173,24 @@ export default function Dashboard({
           </div>
 
           {/* Quick actions row */}
-          <div className="flex gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <button
               onClick={handleExportCSV}
-              className="flex-1 bg-gray-50 border border-gray-200 hover:bg-gray-100 text-gray-700 font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 btn-tactile text-sm shadow-sm"
+              className="bg-gray-55 border border-gray-200 hover:bg-gray-100 text-gray-700 font-bold py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 btn-tactile text-xs shadow-sm"
             >
               <Download className="w-4 h-4 text-indigo-500" />
               {t.export_csv}
             </button>
             <button
+              onClick={handleExportPDF}
+              className="bg-gray-55 border border-gray-200 hover:bg-gray-100 text-gray-700 font-bold py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 btn-tactile text-xs shadow-sm"
+            >
+              <Download className="w-4 h-4 text-indigo-500" />
+              PDF
+            </button>
+            <button
               onClick={() => onNavigate('quick_add')}
-              className="flex-1 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 text-indigo-700 font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 btn-tactile text-sm shadow-sm"
+              className="bg-indigo-55 border border-indigo-100 hover:bg-indigo-100 text-indigo-700 font-bold py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 btn-tactile text-xs shadow-sm"
             >
               <Zap className="w-4 h-4 text-indigo-600" />
               {t.quick_add}
@@ -302,15 +335,8 @@ export default function Dashboard({
         </div>
       </div>
 
-      {/* Floating Action Buttons */}
-      <div className="fixed bottom-6 right-6 flex flex-col gap-3 z-10">
-        <button
-          onClick={() => onNavigate('quick_add')}
-          className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-full shadow-lg border border-indigo-100 flex items-center justify-center btn-tactile hover:bg-indigo-100 active:scale-95 transition-all"
-          title={t.quick_add}
-        >
-          <Zap className="w-5 h-5 fill-indigo-600" />
-        </button>
+      {/* Floating Action Button */}
+      <div className="fixed bottom-6 right-6 z-10">
         <button
           onClick={() => onNavigate('add_customer')}
           className="w-14 h-14 bg-indigo-600 text-white rounded-full shadow-2xl flex items-center justify-center btn-tactile hover:bg-indigo-700 active:scale-95 transition-all"

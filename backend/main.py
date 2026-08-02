@@ -17,6 +17,12 @@ from sqlalchemy import func, case
 
 from database import engine, Base, Store, User, Customer, Transaction, get_db
 
+# ReportLab imports for PDF generation
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+
 # Initialize database tables
 Base.metadata.create_all(bind=engine)
 
@@ -879,6 +885,7 @@ def get_daily_closing(
 def get_reminder_link(
     customer_id: int,
     tz_offset: int = Query(330),
+    lang: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -923,6 +930,9 @@ def get_reminder_link(
     
     store = db.query(Store).filter(Store.id == current_user.store_id).first()
     
+    # Resolve target language for reminder text (falls back to store language settings)
+    target_lang = lang if lang in ["en", "te"] else store.language
+    
     # Fetch today's credit transactions for items list
     utc_now = datetime.utcnow()
     local_now = utc_now + timedelta(minutes=tz_offset)
@@ -938,23 +948,20 @@ def get_reminder_link(
 
     today_items_text = ""
     if today_credits:
-        notes = [t.note.strip() for t in today_credits if t.note and t.note.strip()]
-        if notes:
-            items_list = ", ".join(notes)
-            if store.language == "te":
-                today_items_text = f"ఈరోజు కొనుగోలు చేసినవి: {items_list}. "
-            else:
-                today_items_text = f"Today's purchase: {items_list}. "
+        notes = []
+        for t in today_credits:
+            amt_rs = format_rupees(t.amount)
+            note_desc = t.note.strip() if t.note and t.note.strip() else ("Credit" if target_lang == "en" else "అప్పు")
+            notes.append(f"{note_desc} (₹{amt_rs})")
+            
+        items_list = ", ".join(notes)
+        if target_lang == "te":
+            today_items_text = f"ఈరోజు కొనుగోలు చేసినవి: {items_list}. "
         else:
-            total_today_paise = sum(t.amount for t in today_credits)
-            total_today_rs = format_rupees(total_today_paise)
-            if store.language == "te":
-                today_items_text = f"ఈరోజు బకాయి: ₹{total_today_rs}. "
-            else:
-                today_items_text = f"Today's credit: ₹{total_today_rs}. "
+            today_items_text = f"Today's purchase: {items_list}. "
 
     # Build translated message
-    if store.language == "te":
+    if target_lang == "te":
         message = f"నమస్తే {cust_data.name}, {store.name} లో మీ మొత్తం బకాయి రుసుము ₹{balance_formatted}. {today_items_text}దయచేసి వీలైనప్పుడు చెల్లించగలరు. ధన్యవాదాలు!"
     else:
         message = f"Namaste {cust_data.name}, your udhara balance at {store.name} is ₹{balance_formatted}. {today_items_text}Please settle when convenient. Thank you!"
@@ -1036,4 +1043,229 @@ def export_transactions(
         media_type="text/csv"
     )
     response.headers["Content-Disposition"] = "attachment; filename=ledger_transactions.csv"
+    return response
+
+
+# --- PDF EXPORT (ENTIRE LEDGER + TODAY LEDGER) ---
+
+@app.get("/api/export/pdf")
+def export_pdf(
+    tz_offset: int = Query(330),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # 1. Fetch entire ledger balances
+    balance_expr = get_balance_expr()
+    customers = db.query(
+        Customer.id,
+        Customer.name,
+        Customer.phone,
+        balance_expr.label("balance")
+    ).select_from(Customer).outerjoin(
+        Transaction, Customer.id == Transaction.customer_id
+    ).filter(
+        Customer.store_id == current_user.store_id
+    ).group_by(Customer.id).order_by(Customer.name.asc()).all()
+    
+    # 2. Fetch today's transactions for this store
+    utc_now = datetime.utcnow()
+    local_now = utc_now + timedelta(minutes=tz_offset)
+    local_start_of_day = datetime(local_now.year, local_now.month, local_now.day, 0, 0, 0) - timedelta(minutes=tz_offset)
+    local_end_of_day = datetime(local_now.year, local_now.month, local_now.day, 23, 59, 59) - timedelta(minutes=tz_offset)
+    
+    today_txs = db.query(
+        Transaction.id,
+        Transaction.type,
+        Transaction.amount,
+        Transaction.note,
+        Transaction.date,
+        Customer.name.label("customer_name")
+    ).select_from(Transaction).join(Customer).filter(
+        Customer.store_id == current_user.store_id,
+        Transaction.date >= local_start_of_day,
+        Transaction.date <= local_end_of_day
+    ).order_by(Transaction.date.desc()).all()
+
+    store = db.query(Store).filter(Store.id == current_user.store_id).first()
+    
+    # Create PDF Report
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=36,
+        bottomMargin=36
+    )
+    
+    styles = getSampleStyleSheet()
+    
+    # Custom styles
+    title_style = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Heading1'],
+        fontSize=20,
+        leading=24,
+        textColor=colors.HexColor("#4F46E5"),
+        spaceAfter=6
+    )
+    subtitle_style = ParagraphStyle(
+        'DocSub',
+        parent=styles['Normal'],
+        fontSize=10,
+        leading=12,
+        textColor=colors.HexColor("#4B5563"),
+        spaceAfter=15
+    )
+    section_style = ParagraphStyle(
+        'SectionTitle',
+        parent=styles['Heading2'],
+        fontSize=13,
+        leading=16,
+        textColor=colors.HexColor("#111827"),
+        spaceBefore=14,
+        spaceAfter=8,
+        fontName="Helvetica-Bold"
+    )
+    body_style = ParagraphStyle(
+        'BodyTextCustom',
+        parent=styles['Normal'],
+        fontSize=9,
+        leading=11,
+        textColor=colors.HexColor("#374151")
+    )
+    bold_cell = ParagraphStyle(
+        'BoldCell',
+        parent=styles['Normal'],
+        fontSize=9,
+        leading=11,
+        fontName="Helvetica-Bold",
+        textColor=colors.HexColor("#111827")
+    )
+    header_cell = ParagraphStyle(
+        'HeaderCell',
+        parent=styles['Normal'],
+        fontSize=8,
+        leading=10,
+        fontName="Helvetica-Bold",
+        textColor=colors.white
+    )
+    table_cell = ParagraphStyle(
+        'TableCell',
+        parent=styles['Normal'],
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor("#374151")
+    )
+
+    elements = []
+    
+    # Title Header
+    elements.append(Paragraph(f"{store.name} - Udhara Ledger Report", title_style))
+    elements.append(Paragraph(f"Date: {local_now.strftime('%d-%m-%Y')}  |  Generated Local Time: {local_now.strftime('%I:%M %p')}", subtitle_style))
+    
+    # Section 1: Today's Summary Metrics
+    elements.append(Paragraph("Today's Summary Metrics", section_style))
+    total_today_credit = sum(t.amount for t in today_txs if t.type == "credit")
+    total_today_payment = sum(t.amount for t in today_txs if t.type == "payment")
+    total_outstanding_ledger = sum(c.balance for c in customers if c.balance > 0)
+
+    summary_data = [
+        [
+            Paragraph("Today's Credit Given:", bold_cell),
+            Paragraph(f"₹{format_rupees(total_today_credit)}", body_style),
+            Paragraph("Total Ledger Outstanding:", bold_cell),
+            Paragraph(f"₹{format_rupees(total_outstanding_ledger)}", body_style)
+        ],
+        [
+            Paragraph("Today's Payments Received:", bold_cell),
+            Paragraph(f"₹{format_rupees(total_today_payment)}", body_style),
+            Paragraph("Active Customer Accounts:", bold_cell),
+            Paragraph(str(len(customers)), body_style)
+        ]
+    ]
+    summary_table = Table(summary_data, colWidths=[140, 130, 140, 130])
+    summary_table.setStyle(TableStyle([
+        ('LINEBELOW', (0,0), (-1,-1), 0.5, colors.HexColor("#E5E7EB")),
+        ('PADDING', (0,0), (-1,-1), 6),
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#F9FAFB"))
+    ]))
+    elements.append(summary_table)
+    elements.append(Spacer(1, 10))
+
+    # Section 2: Today's Transactions
+    elements.append(Paragraph("Today's Transaction Entries", section_style))
+    if not today_txs:
+        elements.append(Paragraph("<i>No transaction logs recorded today.</i>", body_style))
+    else:
+        tx_table_data = [[
+            Paragraph("Customer Name", header_cell),
+            Paragraph("Type", header_cell),
+            Paragraph("Amount", header_cell),
+            Paragraph("Note / Description", header_cell),
+            Paragraph("Logged Time", header_cell)
+        ]]
+        for t in today_txs:
+            local_time = t.date + timedelta(minutes=tz_offset)
+            type_color = "#EF4444" if t.type == "credit" else "#10B981"
+            type_text = f"<font color='{type_color}'><b>{t.type.capitalize()}</b></font>"
+            tx_table_data.append([
+                Paragraph(t.customer_name, table_cell),
+                Paragraph(type_text, table_cell),
+                Paragraph(f"₹{format_rupees(t.amount)}", table_cell),
+                Paragraph(t.note or "-", table_cell),
+                Paragraph(local_time.strftime("%I:%M %p"), table_cell)
+            ])
+        tx_table = Table(tx_table_data, colWidths=[120, 80, 80, 160, 100])
+        tx_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#4F46E5")),
+            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#F9FAFB")]),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#E5E7EB")),
+            ('PADDING', (0,0), (-1,-1), 5),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE')
+        ]))
+        elements.append(tx_table)
+
+    elements.append(Spacer(1, 10))
+
+    # Section 3: Entire Udhara Balances
+    elements.append(Paragraph("Entire Outstanding Ledger Balances", section_style))
+    if not customers:
+        elements.append(Paragraph("<i>No customers registered.</i>", body_style))
+    else:
+        cust_table_data = [[
+            Paragraph("Customer Name", header_cell),
+            Paragraph("Phone Number", header_cell),
+            Paragraph("Status", header_cell),
+            Paragraph("Balance", header_cell)
+        ]]
+        for c in customers:
+            status_text = "Owes Shop" if c.balance > 0 else "Overpaid" if c.balance < 0 else "Settled"
+            bal_color = "#EF4444" if c.balance > 0 else "#10B981" if c.balance < 0 else "#6B7280"
+            bal_text = f"<font color='{bal_color}'><b>₹{format_rupees(abs(c.balance))}</b></font>"
+            cust_table_data.append([
+                Paragraph(c.name, table_cell),
+                Paragraph(c.phone or "-", table_cell),
+                Paragraph(status_text, table_cell),
+                Paragraph(bal_text, table_cell)
+            ])
+        cust_table = Table(cust_table_data, colWidths=[180, 120, 110, 130])
+        cust_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#4F46E5")),
+            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#F9FAFB")]),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#E5E7EB")),
+            ('PADDING', (0,0), (-1,-1), 5),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE')
+        ]))
+        elements.append(cust_table)
+
+    doc.build(elements)
+    buffer.seek(0)
+    
+    response = StreamingResponse(
+        io.BytesIO(buffer.getvalue()),
+        media_type="application/pdf"
+    )
+    response.headers["Content-Disposition"] = "attachment; filename=udhara_ledger_report.pdf"
     return response

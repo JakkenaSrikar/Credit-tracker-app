@@ -178,6 +178,28 @@ def run_tests():
             assert "120.00" in csv_body, "Amount in rupees formatting wrong"
         print("-> CSV Export OK.")
 
+        # Export PDF
+        url_pdf = f"{base_url}/api/export/pdf"
+        req_pdf = urllib.request.Request(url_pdf, headers={"Authorization": f"Bearer {token_a}"})
+        with urllib.request.urlopen(req_pdf) as res_pdf:
+            pdf_bytes = res_pdf.read()
+            assert res_pdf.status == 200
+            assert len(pdf_bytes) > 100, "PDF response empty"
+            assert pdf_bytes.startswith(b"%PDF"), "Response is not a valid PDF file"
+        print("-> PDF Export OK.")
+
+        # Test reminder link language and price itemization
+        status, rem_te = request(f"/api/customers/{cust_a['id']}/reminder-link?lang=te", token=token_a)
+        assert status == 200
+        assert "నమస్తే" in rem_te["sms_text"]
+        assert "Rice sack (₹120)" in rem_te["sms_text"]
+        
+        status, rem_en = request(f"/api/customers/{cust_a['id']}/reminder-link?lang=en", token=token_a)
+        assert status == 200
+        assert "Namaste" in rem_en["sms_text"]
+        assert "Rice sack (₹120)" in rem_en["sms_text"]
+        print("-> Translated & Itemized Reminder links OK.")
+
         # 7. Test Staff Logins & Last Owner Protection
         print("7. Testing staff login creation and owner-only checks...")
         # Create Staff User A (role: staff)

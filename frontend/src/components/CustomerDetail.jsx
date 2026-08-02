@@ -24,6 +24,7 @@ export default function CustomerDetail({
   const [editTxData, setEditTxData] = useState(null); // { id, amount, note } for inline edit
   const [copied, setCopied] = useState(false);
   const [reminderError, setReminderError] = useState('');
+  const [reminderLang, setReminderLang] = useState(language);
 
   // Undo States
   const [undoTx, setUndoTx] = useState(null);
@@ -32,6 +33,12 @@ export default function CustomerDetail({
   useEffect(() => {
     fetchCustomerDetails();
   }, [customerId, page]);
+
+  useEffect(() => {
+    if (customer && customer.phone) {
+      fetchReminderLink();
+    }
+  }, [reminderLang]);
 
   useEffect(() => {
     if (undoCountdown <= 0) {
@@ -43,6 +50,18 @@ export default function CustomerDetail({
     }, 1000);
     return () => clearTimeout(timer);
   }, [undoCountdown]);
+
+  const fetchReminderLink = async () => {
+    setReminderError('');
+    try {
+      const reminderRes = await apiRequest(`/api/customers/${customerId}/reminder-link?lang=${reminderLang}`);
+      setReminderData(reminderRes.data);
+    } catch (e) {
+      console.warn("Failed to generate reminder link", e);
+      setReminderError(e.message || t.invalid_pin);
+      setReminderData(null);
+    }
+  };
 
   const fetchCustomerDetails = async () => {
     setLoading(true);
@@ -57,14 +76,7 @@ export default function CustomerDetail({
 
       // Load reminder link if phone number exists
       if (data.phone) {
-        try {
-          const reminderRes = await apiRequest(`/api/customers/${customerId}/reminder-link`);
-          setReminderData(reminderRes.data);
-        } catch (e) {
-          console.warn("Failed to generate reminder link", e);
-          setReminderError(e.message || t.invalid_pin);
-          setReminderData(null);
-        }
+        await fetchReminderLink();
       } else {
         setReminderData(null);
         setReminderError(t.phone_label);
@@ -362,9 +374,31 @@ export default function CustomerDetail({
 
       {/* Reminder Deep Links */}
       <div className="bg-white rounded-3xl p-5 border border-gray-150 shadow-sm space-y-4">
-        <h4 className="font-bold text-gray-800 text-sm flex items-center gap-1.5">
-          <Send className="w-4 h-4 text-indigo-500" /> Settle Reminder
-        </h4>
+        <div className="flex justify-between items-center border-b border-gray-100 pb-3 mb-2">
+          <h4 className="font-bold text-gray-800 text-sm flex items-center gap-1.5">
+            <Send className="w-4 h-4 text-indigo-500" /> Settle Reminder
+          </h4>
+          <div className="flex gap-1 bg-gray-100 p-0.5 rounded-lg border border-gray-200">
+            <button
+              type="button"
+              onClick={() => setReminderLang('en')}
+              className={`px-2 py-1 rounded-md text-[10px] font-extrabold tracking-wider uppercase transition-all ${
+                reminderLang === 'en' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              EN
+            </button>
+            <button
+              type="button"
+              onClick={() => setReminderLang('te')}
+              className={`px-2 py-1 rounded-md text-[10px] font-extrabold tracking-wider uppercase transition-all ${
+                reminderLang === 'te' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              తెలుగు
+            </button>
+          </div>
+        </div>
         {reminderData ? (
           <>
             <div className="flex gap-2">

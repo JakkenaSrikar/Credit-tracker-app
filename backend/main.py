@@ -468,6 +468,23 @@ def get_customers(
         } for r in results
     ]
 
+# 22. CUSTOMER QUICK LIST (SCOPED, last transaction ordered)
+@app.get("/api/customers/quick-list")
+def get_customers_quick_list(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    results = db.query(
+        Customer.id,
+        Customer.name,
+        Customer.phone
+    ).select_from(Customer).outerjoin(
+        Transaction, Customer.id == Transaction.customer_id
+    ).filter(
+        Customer.store_id == current_user.store_id
+    ).group_by(Customer.id).order_by(
+        func.max(Transaction.date).desc(), Customer.created_at.desc()
+    ).all()
+    
+    return [{"id": r.id, "name": r.name, "phone": r.phone} for r in results]
+
 # 13. GET CUSTOMER BY ID (PAGINATED, SCOPED)
 @app.get("/api/customers/{customer_id}")
 def get_customer(
@@ -852,22 +869,7 @@ def get_daily_closing(
         ]
     }
 
-# 22. CUSTOMER QUICK LIST (SCOPED, last transaction ordered)
-@app.get("/api/customers/quick-list")
-def get_customers_quick_list(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    results = db.query(
-        Customer.id,
-        Customer.name,
-        Customer.phone
-    ).select_from(Customer).outerjoin(
-        Transaction, Customer.id == Transaction.customer_id
-    ).filter(
-        Customer.store_id == current_user.store_id
-    ).group_by(Customer.id).order_by(
-        func.max(Transaction.date).desc(), Customer.created_at.desc()
-    ).all()
-    
-    return [{"id": r.id, "name": r.name, "phone": r.phone} for r in results]
+
 
 
 # --- REMINDERS (SCOPED) ---

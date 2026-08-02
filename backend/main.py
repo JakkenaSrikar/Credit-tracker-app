@@ -878,6 +878,7 @@ def get_daily_closing(
 @app.get("/api/customers/{customer_id}/reminder-link")
 def get_reminder_link(
     customer_id: int,
+    tz_offset: int = Query(330),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -921,7 +922,42 @@ def get_reminder_link(
     balance_formatted = format_rupees(cust_data.balance)
     
     store = db.query(Store).filter(Store.id == current_user.store_id).first()
-    message = f"Namaste {cust_data.name}, your udhara balance at {store.name} is ₹{balance_formatted}. Please settle when convenient. Thank you!"
+    
+    # Fetch today's credit transactions for items list
+    utc_now = datetime.utcnow()
+    local_now = utc_now + timedelta(minutes=tz_offset)
+    local_start_of_day = datetime(local_now.year, local_now.month, local_now.day, 0, 0, 0) - timedelta(minutes=tz_offset)
+    local_end_of_day = datetime(local_now.year, local_now.month, local_now.day, 23, 59, 59) - timedelta(minutes=tz_offset)
+
+    today_credits = db.query(Transaction).filter(
+        Transaction.customer_id == customer_id,
+        Transaction.type == "credit",
+        Transaction.date >= local_start_of_day,
+        Transaction.date <= local_end_of_day
+    ).all()
+
+    today_items_text = ""
+    if today_credits:
+        notes = [t.note.strip() for t in today_credits if t.note and t.note.strip()]
+        if notes:
+            items_list = ", ".join(notes)
+            if store.language == "te":
+                today_items_text = f"ఈరోజు కొనుగోలు చేసినవి: {items_list}. "
+            else:
+                today_items_text = f"Today's purchase: {items_list}. "
+        else:
+            total_today_paise = sum(t.amount for t in today_credits)
+            total_today_rs = format_rupees(total_today_paise)
+            if store.language == "te":
+                today_items_text = f"ఈరోజు బకాయి: ₹{total_today_rs}. "
+            else:
+                today_items_text = f"Today's credit: ₹{total_today_rs}. "
+
+    # Build translated message
+    if store.language == "te":
+        message = f"నమస్తే {cust_data.name}, {store.name} లో మీ మొత్తం బకాయి రుసుము ₹{balance_formatted}. {today_items_text}దయచేసి వీలైనప్పుడు చెల్లించగలరు. ధన్యవాదాలు!"
+    else:
+        message = f"Namaste {cust_data.name}, your udhara balance at {store.name} is ₹{balance_formatted}. {today_items_text}Please settle when convenient. Thank you!"
     
     url_encoded_msg = quote(message)
     wa_link = f"https://wa.me/{final_phone}?text={url_encoded_msg}"

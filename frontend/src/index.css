@@ -1,0 +1,54 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+body {
+  font-family: 'Outfit', 'Inter', sans-serif;
+  background-color: #FAF9F6;
+  color: #1F2937;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tactile feedback for mobile buttons */
+.btn-tactile {
+  transition: transform 0.08s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.08s;
+}
+
+.btn-tactile:active {
+  transform: scale(0.96);
+  opacity: 0.9;
+}
+
+/* Ledger paper styling */
+.ledger-line {
+  border-bottom: 1px dashed #E5E7EB;
+}
+
+/* Custom input field style */
+.input-ledger {
+  background-color: #FFFFFF;
+  border: 1px solid #D1D5DB;
+  border-radius: 1rem;
+  padding: 0.875rem 1rem;
+  font-size: 1.125rem;
+  outline: none;
+  transition: all 0.15s ease-in-out;
+}
+
+.input-ledger:focus {
+  border-color: #4F46E5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+/* Hide scrollbar for clean app experience */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

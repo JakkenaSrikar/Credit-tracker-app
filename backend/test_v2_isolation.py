@@ -198,7 +198,24 @@ def run_tests():
         assert status == 200
         assert "Namaste" in rem_en["sms_text"]
         assert "Rice sack (₹120)" in rem_en["sms_text"]
-        print("-> Translated & Itemized Reminder links OK.")
+
+        status, rem_hi = request(f"/api/customers/{cust_a['id']}/reminder-link?lang=hi", token=token_a)
+        assert status == 200
+        assert "नमस्ते" in rem_hi["sms_text"]
+        assert "आज की खरीदारी: Rice sack (₹120)" in rem_hi["sms_text"]
+        print("-> Translated & Itemized Reminder links (EN, TE, HI) OK.")
+
+        # Test customer PDF export endpoints
+        for r in ["today", "all"]:
+            for l in ["en", "te", "hi"]:
+                url_cpdf = f"{base_url}/api/customers/{cust_a['id']}/export/pdf?range={r}&lang={l}"
+                req_cpdf = urllib.request.Request(url_cpdf, headers={"Authorization": f"Bearer {token_a}"})
+                with urllib.request.urlopen(req_cpdf) as res_cpdf:
+                    cpdf_bytes = res_cpdf.read()
+                    assert res_cpdf.status == 200
+                    assert len(cpdf_bytes) > 100, f"Customer PDF empty for range={r}, lang={l}"
+                    assert cpdf_bytes.startswith(b"%PDF"), f"Customer PDF invalid header for range={r}, lang={l}"
+        print("-> Customer Report PDF exports (Today & All in EN, TE, HI) OK.")
 
         # 7. Test Staff Logins & Last Owner Protection
         print("7. Testing staff login creation and owner-only checks...")

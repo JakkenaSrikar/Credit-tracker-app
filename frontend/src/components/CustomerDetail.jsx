@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiRequest } from '../api';
-import { ArrowLeft, Edit2, Trash2, Send, Phone, Calendar, Check, Copy } from 'lucide-react';
+import { ArrowLeft, Edit2, Trash2, Send, Phone, Calendar, Check, Copy, Download, FileText } from 'lucide-react';
 import { translations } from '../i18n';
 
 export default function CustomerDetail({
@@ -25,6 +25,7 @@ export default function CustomerDetail({
   const [copied, setCopied] = useState(false);
   const [reminderError, setReminderError] = useState('');
   const [reminderLang, setReminderLang] = useState(language);
+  const [pdfLang, setPdfLang] = useState(language);
 
   // Undo States
   const [undoTx, setUndoTx] = useState(null);
@@ -50,6 +51,35 @@ export default function CustomerDetail({
     }, 1000);
     return () => clearTimeout(timer);
   }, [undoCountdown]);
+
+  const handleDownloadPDF = async (range) => {
+    if (!navigator.onLine) {
+      alert("PDF download requires an active internet connection.");
+      return;
+    }
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(
+        `${import.meta.env.VITE_API_BASE_URL || ''}/api/customers/${customerId}/export/pdf?range=${range}&lang=${pdfLang}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+      if (!response.ok) throw new Error("Download failed");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${customer?.name || 'customer'}_ledger_${range}_${pdfLang}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (e) {
+      alert("Failed to export customer PDF.");
+    }
+  };
 
   const fetchReminderLink = async () => {
     setReminderError('');
@@ -382,7 +412,7 @@ export default function CustomerDetail({
             <button
               type="button"
               onClick={() => setReminderLang('en')}
-              className={`px-2 py-1 rounded-md text-[10px] font-extrabold tracking-wider uppercase transition-all ${
+              className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold tracking-wider uppercase transition-all ${
                 reminderLang === 'en' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-800'
               }`}
             >
@@ -391,11 +421,20 @@ export default function CustomerDetail({
             <button
               type="button"
               onClick={() => setReminderLang('te')}
-              className={`px-2 py-1 rounded-md text-[10px] font-extrabold tracking-wider uppercase transition-all ${
+              className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold tracking-wider uppercase transition-all ${
                 reminderLang === 'te' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-800'
               }`}
             >
               తెలుగు
+            </button>
+            <button
+              type="button"
+              onClick={() => setReminderLang('hi')}
+              className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold tracking-wider uppercase transition-all ${
+                reminderLang === 'hi' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              हिंदी
             </button>
           </div>
         </div>
@@ -437,6 +476,42 @@ export default function CustomerDetail({
             </p>
           </div>
         )}
+      </div>
+
+      {/* Download PDF Reports */}
+      <div className="bg-white rounded-3xl p-5 border border-gray-150 shadow-sm space-y-4">
+        <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+          <h4 className="font-bold text-gray-800 text-sm flex items-center gap-1.5">
+            <FileText className="w-4 h-4 text-indigo-500" /> Export PDF Report
+          </h4>
+          
+          <select
+            value={pdfLang}
+            onChange={(e) => setPdfLang(e.target.value)}
+            className="text-xs font-bold bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-gray-700 outline-none"
+          >
+            <option value="en">English</option>
+            <option value="te">తెలుగు (Telugu)</option>
+            <option value="hi">हिंदी (Hindi)</option>
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-2.5">
+          <button
+            type="button"
+            onClick={() => handleDownloadPDF('today')}
+            className="w-full bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 text-indigo-700 py-3 px-4 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 btn-tactile shadow-sm"
+          >
+            <Download className="w-4 h-4 text-indigo-600" /> Today's Transactions PDF
+          </button>
+          <button
+            type="button"
+            onClick={() => handleDownloadPDF('all')}
+            className="w-full bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 text-indigo-700 py-3 px-4 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 btn-tactile shadow-sm"
+          >
+            <Download className="w-4 h-4 text-indigo-600" /> All-time Transactions PDF
+          </button>
+        </div>
       </div>
 
       {/* Edit Transaction Modal / Overlay Form */}

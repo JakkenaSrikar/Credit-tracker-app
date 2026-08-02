@@ -614,28 +614,37 @@ def get_reminder_link(
     if not cust_data.phone:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Reminders require a phone number. Please edit this customer to add a phone number."
+            detail="Add a valid phone number to send a reminder"
         )
         
+    # Clean phone: keep only digits
+    clean_phone = "".join(filter(str.isdigit, cust_data.phone))
+    
+    # Normalize to 10 digits by stripping leading 0 or 91 country codes
+    if len(clean_phone) == 11 and clean_phone.startswith("0"):
+        clean_phone = clean_phone[1:]
+    elif len(clean_phone) == 12 and clean_phone.startswith("91"):
+        clean_phone = clean_phone[2:]
+        
+    if len(clean_phone) != 10:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Add a valid phone number to send a reminder"
+        )
+        
+    # Prepend India's country code 91
+    final_phone = "91" + clean_phone
+    
     balance_formatted = format_rupees(cust_data.balance)
     
     # Message template
-    # "Namaste [Name], your udhara balance at [Shop Name] is ₹[balance]. Please settle when convenient. Thank you!"
     message = f"Namaste {cust_data.name}, your udhara balance at {current_shop.shop_name} is ₹{balance_formatted}. Please settle when convenient. Thank you!"
     
-    # Ensure phone is formatted. Clean it of symbols (+, spaces, hyphens) but keep digits
-    clean_phone = "".join(filter(str.isdigit, cust_data.phone))
-    
-    # Generate WhatsApp Link
-    # wa.me format requires country code without leading + or 00. Let's check.
-    # Default to India (+91) if it doesn't start with code or is 10 digits
-    if len(clean_phone) == 10:
-        clean_phone = "91" + clean_phone
-        
     url_encoded_msg = quote(message)
-    wa_link = f"https://wa.me/{clean_phone}?text={url_encoded_msg}"
+    wa_link = f"https://wa.me/{final_phone}?text={url_encoded_msg}"
     
     return {
         "wa_link": wa_link,
         "sms_text": message
     }
+

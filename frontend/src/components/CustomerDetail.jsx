@@ -15,6 +15,7 @@ export default function CustomerDetail({ customerId, onBack, onNavigateToAddTx, 
   const [deleteError, setDeleteError] = useState('');
   const [editTxData, setEditTxData] = useState(null); // { id, amount, note } for inline edit
   const [copied, setCopied] = useState(false);
+  const [reminderError, setReminderError] = useState('');
 
   useEffect(() => {
     fetchCustomerDetails();
@@ -23,6 +24,7 @@ export default function CustomerDetail({ customerId, onBack, onNavigateToAddTx, 
   const fetchCustomerDetails = async () => {
     setLoading(true);
     setError('');
+    setReminderError('');
     try {
       const { data } = await apiRequest(`/api/customers/${customerId}?page=${page}&size=10`);
       setCustomer(data);
@@ -36,9 +38,12 @@ export default function CustomerDetail({ customerId, onBack, onNavigateToAddTx, 
           setReminderData(reminderRes.data);
         } catch (e) {
           console.warn("Failed to generate reminder link", e);
+          setReminderError(e.message || 'Add a valid phone number to send a reminder');
+          setReminderData(null);
         }
       } else {
         setReminderData(null);
+        setReminderError('Add a valid phone number to send a reminder');
       }
     } catch (err) {
       setError(err.message || 'Failed to load customer details.');
@@ -312,12 +317,12 @@ export default function CustomerDetail({ customerId, onBack, onNavigateToAddTx, 
       </div>
 
       {/* Reminder Deep Links */}
-      {customer.phone ? (
-        reminderData && (
-          <div className="bg-white rounded-3xl p-5 border border-gray-150 shadow-sm space-y-4">
-            <h4 className="font-bold text-gray-800 text-sm flex items-center gap-1.5">
-              <Send className="w-4 h-4 text-indigo-500" /> Settle Reminder
-            </h4>
+      <div className="bg-white rounded-3xl p-5 border border-gray-150 shadow-sm space-y-4">
+        <h4 className="font-bold text-gray-800 text-sm flex items-center gap-1.5">
+          <Send className="w-4 h-4 text-indigo-500" /> Settle Reminder
+        </h4>
+        {reminderData ? (
+          <>
             <div className="flex gap-2">
               <a
                 href={reminderData.wa_link}
@@ -340,15 +345,21 @@ export default function CustomerDetail({ customerId, onBack, onNavigateToAddTx, 
                 "{reminderData.sms_text}"
               </p>
             </div>
+          </>
+        ) : (
+          <div className="space-y-3">
+            <button
+              disabled
+              className="w-full bg-gray-200 text-gray-400 py-3 px-4 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 cursor-not-allowed"
+            >
+              Send WhatsApp
+            </button>
+            <p className="text-xs text-amber-600 font-semibold text-center bg-amber-50 border border-amber-100 p-2.5 rounded-xl">
+              {!customer?.phone ? "Add a phone number to send a reminder" : (reminderError || "Add a valid phone number to send a reminder")}
+            </p>
           </div>
-        )
-      ) : (
-        <div className="bg-amber-50 border border-amber-200 rounded-3xl p-4 text-center">
-          <p className="text-xs text-amber-800 font-semibold leading-relaxed">
-            WhatsApp/SMS reminders require a phone number. Edit customer details above to configure.
-          </p>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Edit Transaction Modal / Overlay Form */}
       {editTxData && (

@@ -1,8 +1,7 @@
 from datetime import datetime
+import os
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, event
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
-
-import os
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./udhara.db")
 
@@ -24,31 +23,51 @@ if is_sqlite:
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
-
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
-class ShopSettings(Base):
-    __tablename__ = "shop_settings"
-    id = Column(Integer, primary_key=True, index=True)
-    shop_name = Column(String, nullable=False)
-    owner_pin = Column(String, nullable=False)  # Hashed PIN
+class Store(Base):
+    __tablename__ = "stores"
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    language = Column(String, default="en", nullable=False)  # "en" | "te"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    users = relationship("User", back_populates="store", cascade="all, delete-orphan")
+    customers = relationship("Customer", back_populates="store", cascade="all, delete-orphan")
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    store_id = Column(Integer, ForeignKey("stores.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String, nullable=False)
+    pin_hash = Column(String, nullable=False)
+    role = Column(String, default="owner", nullable=False)  # "owner" | "staff"
+    recovery_question = Column(String, nullable=True)
+    recovery_answer_hash = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    store = relationship("Store", back_populates="users")
+    transactions = relationship("Transaction", back_populates="creator", cascade="all, delete-orphan")
 
 class Customer(Base):
     __tablename__ = "customers"
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    store_id = Column(Integer, ForeignKey("stores.id", ondelete="CASCADE"), nullable=False)
     name = Column(String, nullable=False)
-    phone = Column(String, nullable=True)  # Optional/nullable
+    phone = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # Cascade delete transactions when customer is deleted
+    store = relationship("Store", back_populates="customers")
     transactions = relationship("Transaction", back_populates="customer", cascade="all, delete-orphan")
 
 class Transaction(Base):
     __tablename__ = "transactions"
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
+    created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     type = Column(String, nullable=False)  # "credit" | "payment"
     amount = Column(Integer, nullable=False)  # in paise
     note = Column(String, nullable=True)
@@ -57,6 +76,7 @@ class Transaction(Base):
     edited_at = Column(DateTime, nullable=True)
 
     customer = relationship("Customer", back_populates="transactions")
+    creator = relationship("User", back_populates="transactions")
 
 def get_db():
     db = SessionLocal()

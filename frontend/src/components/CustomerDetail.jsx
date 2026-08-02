@@ -1,8 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { apiRequest } from '../api';
 import { ArrowLeft, Edit2, Trash2, Send, Phone, Calendar, Check, Copy } from 'lucide-react';
+import { translations } from '../i18n';
 
-export default function CustomerDetail({ customerId, onBack, onNavigateToAddTx, onRefreshDashboard }) {
+export default function CustomerDetail({
+  customerId,
+  language = 'en',
+  onBack,
+  onNavigateToAddTx,
+  onRefreshDashboard
+}) {
+  const t = translations[language];
   const [customer, setCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -17,9 +25,24 @@ export default function CustomerDetail({ customerId, onBack, onNavigateToAddTx, 
   const [copied, setCopied] = useState(false);
   const [reminderError, setReminderError] = useState('');
 
+  // Undo States
+  const [undoTx, setUndoTx] = useState(null);
+  const [undoCountdown, setUndoCountdown] = useState(0);
+
   useEffect(() => {
     fetchCustomerDetails();
   }, [customerId, page]);
+
+  useEffect(() => {
+    if (undoCountdown <= 0) {
+      setUndoTx(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setUndoCountdown(prev => prev - 1);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [undoCountdown]);
 
   const fetchCustomerDetails = async () => {
     setLoading(true);
@@ -38,12 +61,12 @@ export default function CustomerDetail({ customerId, onBack, onNavigateToAddTx, 
           setReminderData(reminderRes.data);
         } catch (e) {
           console.warn("Failed to generate reminder link", e);
-          setReminderError(e.message || 'Add a valid phone number to send a reminder');
+          setReminderError(e.message || t.invalid_pin);
           setReminderData(null);
         }
       } else {
         setReminderData(null);
-        setReminderError('Add a valid phone number to send a reminder');
+        setReminderError(t.phone_label);
       }
     } catch (err) {
       setError(err.message || 'Failed to load customer details.');
@@ -115,9 +138,13 @@ export default function CustomerDetail({ customerId, onBack, onNavigateToAddTx, 
   const handleDeleteTx = async (txId) => {
     if (!window.confirm("Are you sure you want to delete this transaction entry? This will change the balance.")) return;
     try {
-      await apiRequest(`/api/transactions/${txId}`, {
+      const { data } = await apiRequest(`/api/transactions/${txId}`, {
         method: 'DELETE'
       });
+      if (data.deleted_transaction) {
+        setUndoTx(data.deleted_transaction);
+        setUndoCountdown(5);
+      }
       fetchCustomerDetails();
       onRefreshDashboard();
     } catch (err) {
@@ -125,9 +152,25 @@ export default function CustomerDetail({ customerId, onBack, onNavigateToAddTx, 
     }
   };
 
+  const handleUndo = async () => {
+    if (!undoTx) return;
+    try {
+      await apiRequest('/api/transactions', {
+        method: 'POST',
+        body: JSON.stringify(undoTx)
+      });
+      setUndoTx(null);
+      setUndoCountdown(0);
+      fetchCustomerDetails();
+      onRefreshDashboard();
+    } catch (e) {
+      alert("Failed to restore transaction.");
+    }
+  };
+
   const formatRupees = (paise) => {
     const amountRs = paise / 100.0;
-    if (amountRs.is_integer) return `₹${amountRs}`;
+    if (amountRs % 1 === 0) return `₹${Math.floor(amountRs)}`;
     return `₹${amountRs.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
   };
 
@@ -176,7 +219,7 @@ export default function CustomerDetail({ customerId, onBack, onNavigateToAddTx, 
   const absBalance = Math.abs(customer.balance);
 
   return (
-    <div className="max-w-md mx-auto p-4 space-y-6 pb-24">
+    <div className="max-w-md mx-auto p-4 space-y-6 pb-32">
       {/* Header Navigation */}
       <div className="flex justify-between items-center">
         <button
@@ -196,7 +239,7 @@ export default function CustomerDetail({ customerId, onBack, onNavigateToAddTx, 
           <button
             onClick={() => handleDeleteCustomer(false)}
             className="w-10 h-10 bg-red-50 border border-red-100 rounded-xl flex items-center justify-center text-red-600 hover:bg-red-100 btn-tactile shadow-sm"
-            title="Delete Customer"
+            title={t.delete_customer}
           >
             <Trash2 className="w-4 h-4" />
           </button>
@@ -228,7 +271,7 @@ export default function CustomerDetail({ customerId, onBack, onNavigateToAddTx, 
             />
             <input
               type="tel"
-              placeholder="Phone Number (Optional)"
+              placeholder={t.phone_label}
               value={editPhone}
               onChange={(e) => setEditPhone(e.target.value)}
               className="w-full input-ledger text-sm py-2 px-3"
@@ -304,15 +347,15 @@ export default function CustomerDetail({ customerId, onBack, onNavigateToAddTx, 
           onClick={() => onNavigateToAddTx('credit')}
           className="py-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-2xl shadow-lg shadow-red-600/10 flex flex-col items-center justify-center gap-1 btn-tactile text-lg"
         >
-          <span className="text-xs uppercase tracking-wider font-semibold opacity-80">Given (Credit)</span>
-          <span>Add Credit</span>
+          <span className="text-xs uppercase tracking-wider font-semibold opacity-80">{t.given_credit}</span>
+          <span>{t.add_credit}</span>
         </button>
         <button
           onClick={() => onNavigateToAddTx('payment')}
           className="py-4 bg-green-600 hover:bg-green-700 text-white font-bold rounded-2xl shadow-lg shadow-green-600/10 flex flex-col items-center justify-center gap-1 btn-tactile text-lg"
         >
-          <span className="text-xs uppercase tracking-wider font-semibold opacity-80">Got (Payment)</span>
-          <span>Add Payment</span>
+          <span className="text-xs uppercase tracking-wider font-semibold opacity-80">{t.got_payment}</span>
+          <span>{t.add_payment}</span>
         </button>
       </div>
 
@@ -492,6 +535,19 @@ export default function CustomerDetail({ customerId, onBack, onNavigateToAddTx, 
           </div>
         )}
       </div>
+
+      {/* Undo Delete Transaction Toast */}
+      {undoTx && (
+        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-5 py-4 rounded-2xl flex items-center justify-between gap-6 shadow-2xl w-[90%] max-w-sm z-50 animate-bounce">
+          <span className="text-sm font-semibold">{t.tx_deleted} ({undoCountdown}s)</span>
+          <button
+            onClick={handleUndo}
+            className="text-indigo-400 font-extrabold hover:text-indigo-300 text-sm flex items-center gap-1 active:scale-95 transition-all uppercase tracking-wider"
+          >
+            {t.undo}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

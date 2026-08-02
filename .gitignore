@@ -1,6 +1,8 @@
 # Virtual Environment
 backend/.venv/
 backend/udhara.db
+udhara.db
+
 backend/__pycache__/
 backend/*/__pycache__/
 

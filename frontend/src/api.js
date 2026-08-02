@@ -27,8 +27,9 @@ export async function apiRequest(endpoint, options = {}) {
     headers,
   };
 
-  // Cache key for GET requests
-  const cacheKey = `api_cache:${endpoint}`;
+  // Cache key isolated by token to prevent cross-tenant/store collision
+  const tokenNs = token ? token.slice(-12) : 'public';
+  const cacheKey = `api_cache:${tokenNs}:${endpoint}`;
 
   if (method === 'GET' && isOffline()) {
     const cached = localStorage.getItem(cacheKey);
@@ -44,18 +45,24 @@ export async function apiRequest(endpoint, options = {}) {
     if (response.status === 401) {
       localStorage.removeItem('token');
       window.dispatchEvent(new Event('auth_failed'));
-      throw new Error("Unauthorized. Please login again.");
+      const authErr = new Error("Unauthorized. Please login again.");
+      authErr.status = 401;
+      throw authErr;
     }
     
     if (response.status === 429) {
       const errData = await response.json();
-      throw new Error(errData.detail || "Too many attempts. Please slow down.");
+      const limitErr = new Error(errData.detail || "Too many attempts. Please slow down.");
+      limitErr.status = 429;
+      throw limitErr;
     }
 
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.detail?.message || data.detail || "API Error");
+      const apiErr = new Error(data.detail?.message || data.detail || "API Error");
+      apiErr.status = response.status;
+      throw apiErr;
     }
 
     // Cache successful GET requests
@@ -69,8 +76,8 @@ export async function apiRequest(endpoint, options = {}) {
 
     return { data, offline: false };
   } catch (error) {
-    if (method === 'GET') {
-      // Network failure, fallback to cache if available
+    // Only fallback to cache on network connection errors or server 5xx errors, never on client 4xx validation errors
+    if (method === 'GET' && (!error.status || error.status >= 500)) {
       const cached = localStorage.getItem(cacheKey);
       if (cached) {
         return { data: JSON.parse(cached), offline: true };

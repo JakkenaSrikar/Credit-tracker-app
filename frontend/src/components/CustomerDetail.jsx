@@ -48,6 +48,7 @@ export default function CustomerDetail({
     setLoading(true);
     setError('');
     setReminderError('');
+    setReminderData(null);
     try {
       const { data } = await apiRequest(`/api/customers/${customerId}?page=${page}&size=10`);
       setCustomer(data);

@@ -24,6 +24,7 @@ export default function App() {
   const [userId, setUserId] = useState(null);
 
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+  const [preselectedCustomer, setPreselectedCustomer] = useState(null);
   const [txType, setTxType] = useState('credit');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -212,6 +213,10 @@ export default function App() {
               setTxType(type);
               setScreen('add_transaction');
             }}
+            onNavigateToQuickAdd={(cust) => {
+              setPreselectedCustomer(cust);
+              setScreen('quick_add');
+            }}
           />
         );
       case 'add_customer':
@@ -257,8 +262,13 @@ export default function App() {
         return (
           <QuickAdd
             language={language}
-            onBack={() => setScreen('dashboard')}
+            initialCustomer={preselectedCustomer}
+            onBack={() => {
+              setPreselectedCustomer(null);
+              setScreen('dashboard');
+            }}
             onTransactionSuccess={() => {
+              setPreselectedCustomer(null);
               triggerDashboardRefresh();
               setScreen('dashboard');
             }}

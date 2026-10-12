@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiRequest } from '../api';
-import { Search, UserPlus, ArrowUpDown, Smartphone, Download, Settings as SettingsIcon, Zap, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, UserPlus, ArrowUpDown, Smartphone, Download, Settings as SettingsIcon, Zap, ChevronDown, ChevronUp, Mic } from 'lucide-react';
 import { translations } from '../i18n';
 
 export default function Dashboard({
@@ -190,10 +190,10 @@ export default function Dashboard({
             </button>
             <button
               onClick={() => onNavigate('quick_add')}
-              className="bg-indigo-55 border border-indigo-100 hover:bg-indigo-100 text-indigo-700 font-bold py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 btn-tactile text-xs shadow-sm"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 btn-tactile text-xs shadow-md shadow-indigo-600/20"
             >
-              <Zap className="w-4 h-4 text-indigo-600" />
-              {t.quick_add}
+              <Mic className="w-4 h-4 text-white" />
+              <span>{t.voice_entry}</span>
             </button>
           </div>
         </div>

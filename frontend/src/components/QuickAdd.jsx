@@ -8,7 +8,7 @@ import {
   Edit3, User, Tag, Sparkles, WifiOff
 } from 'lucide-react';
 
-export default function QuickAdd({ language, onBack, onTransactionSuccess, offlineQueue, setOfflineQueue }) {
+export default function QuickAdd({ language, initialCustomer, onBack, onTransactionSuccess, offlineQueue, setOfflineQueue }) {
   const t = translations[language] || translations.en;
   
   // Navigation mode: 'voice' | 'manual'
@@ -27,7 +27,7 @@ export default function QuickAdd({ language, onBack, onTransactionSuccess, offli
   // Voice Draft Data
   const [transcript, setTranscript] = useState('');
   const [isEditingTranscript, setIsEditingTranscript] = useState(false);
-  const [selectedCust, setSelectedCust] = useState(null); // { id, name, phone }
+  const [selectedCust, setSelectedCust] = useState(initialCustomer || null); // { id, name, phone }
   const [customerCandidates, setCustomerCandidates] = useState([]);
   const [txType, setTxType] = useState('credit'); // 'credit' | 'payment'
   const [amount, setAmount] = useState('');

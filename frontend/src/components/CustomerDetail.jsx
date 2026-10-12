@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiRequest } from '../api';
-import { ArrowLeft, Edit2, Trash2, Send, Phone, Calendar, Check, Copy, Download, FileText } from 'lucide-react';
+import { ArrowLeft, Edit2, Trash2, Send, Phone, Calendar, Check, Copy, Download, FileText, Mic } from 'lucide-react';
 import { translations } from '../i18n';
 
 export default function CustomerDetail({
@@ -8,6 +8,7 @@ export default function CustomerDetail({
   language = 'en',
   onBack,
   onNavigateToAddTx,
+  onNavigateToQuickAdd,
   onRefreshDashboard
 }) {
   const t = translations[language];
@@ -389,21 +390,31 @@ export default function CustomerDetail({
       </div>
 
       {/* Quick Action Buttons */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="space-y-3">
         <button
-          onClick={() => onNavigateToAddTx('credit')}
-          className="py-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-2xl shadow-lg shadow-red-600/10 flex flex-col items-center justify-center gap-1 btn-tactile text-lg"
+          onClick={() => onNavigateToQuickAdd && customer ? onNavigateToQuickAdd(customer) : null}
+          className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-700 hover:to-indigo-600 text-white font-extrabold rounded-2xl shadow-md shadow-indigo-600/20 flex items-center justify-center gap-2 btn-tactile text-sm"
         >
-          <span className="text-xs uppercase tracking-wider font-semibold opacity-80">{t.given_credit}</span>
-          <span>{t.add_credit}</span>
+          <Mic className="w-5 h-5 text-indigo-200" />
+          <span>{t.speak_tx} ({customer?.name})</span>
         </button>
-        <button
-          onClick={() => onNavigateToAddTx('payment')}
-          className="py-4 bg-green-600 hover:bg-green-700 text-white font-bold rounded-2xl shadow-lg shadow-green-600/10 flex flex-col items-center justify-center gap-1 btn-tactile text-lg"
-        >
-          <span className="text-xs uppercase tracking-wider font-semibold opacity-80">{t.got_payment}</span>
-          <span>{t.add_payment}</span>
-        </button>
+
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => onNavigateToAddTx('credit')}
+            className="py-3.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-2xl shadow-md shadow-red-600/10 flex flex-col items-center justify-center gap-0.5 btn-tactile text-base"
+          >
+            <span className="text-[11px] uppercase tracking-wider font-semibold opacity-80">{t.given_credit}</span>
+            <span>{t.add_credit}</span>
+          </button>
+          <button
+            onClick={() => onNavigateToAddTx('payment')}
+            className="py-3.5 bg-green-600 hover:bg-green-700 text-white font-bold rounded-2xl shadow-md shadow-green-600/10 flex flex-col items-center justify-center gap-0.5 btn-tactile text-base"
+          >
+            <span className="text-[11px] uppercase tracking-wider font-semibold opacity-80">{t.got_payment}</span>
+            <span>{t.add_payment}</span>
+          </button>
+        </div>
       </div>
 
       {/* Reminder Deep Links */}

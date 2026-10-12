@@ -1,6 +1,6 @@
 from datetime import datetime
 import os
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, event
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, event, text
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./udhara.db")
@@ -74,9 +74,27 @@ class Transaction(Base):
     date = Column(DateTime, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)
     edited_at = Column(DateTime, nullable=True)
+    idempotency_key = Column(String(128), nullable=True, index=True)
 
     customer = relationship("Customer", back_populates="transactions")
     creator = relationship("User", back_populates="transactions")
+
+def ensure_schema():
+    """Ensure idempotency_key column exists on transactions table in existing databases."""
+    try:
+        with engine.connect() as conn:
+            if is_sqlite:
+                result = conn.execute(text("PRAGMA table_info(transactions);")).fetchall()
+                col_names = [row[1] for row in result]
+                if len(col_names) > 0 and "idempotency_key" not in col_names:
+                    conn.execute(text("ALTER TABLE transactions ADD COLUMN idempotency_key VARCHAR(128);"))
+                    conn.commit()
+            else:
+                conn.execute(text("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(128);"))
+                conn.commit()
+    except Exception:
+        # Table might not exist yet before Base.metadata.create_all
+        pass
 
 def get_db():
     db = SessionLocal()

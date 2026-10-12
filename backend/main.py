@@ -8,14 +8,17 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 from urllib.parse import quote
 
-from fastapi import FastAPI, Depends, HTTPException, status, Query, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Query, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
 
-from database import engine, Base, Store, User, Customer, Transaction, get_db
+from database import engine, Base, Store, User, Customer, Transaction, get_db, ensure_schema
+from speech_service import transcribe_audio, SpeechServiceError
+from ai_extraction_service import extract_transaction_draft
+from customer_matcher import match_customer
 
 # ReportLab imports for PDF generation
 from reportlab.lib.pagesizes import letter
@@ -80,6 +83,7 @@ download_unicode_fonts()
 
 # Initialize database tables
 Base.metadata.create_all(bind=engine)
+ensure_schema()
 
 app = FastAPI(title="Kirana Shop Udhara Tracker Multi-Store API")
 
@@ -137,6 +141,22 @@ def record_failed_login(client_ip: str):
 def record_successful_login(client_ip: str):
     if client_ip in login_rate_limit:
         del login_rate_limit[client_ip]
+
+# In-Memory Rate Limiting for Voice Operations (User-based)
+voice_rate_limit = {}
+
+def check_voice_rate_limit(user_id: int):
+    now = time.time()
+    record = voice_rate_limit.get(user_id)
+    if not record or now - record["window_start"] > 60:
+        voice_rate_limit[user_id] = {"count": 1, "window_start": now}
+        return
+    if record["count"] >= 30:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many voice requests. Please wait a moment."
+        )
+    record["count"] += 1
 
 
 # Hashing Utilities
@@ -465,6 +485,13 @@ def get_balance_expr():
     payment_sum = func.coalesce(func.sum(case((Transaction.type == 'payment', Transaction.amount), else_=0)), 0)
     return credit_sum - payment_sum
 
+def get_customer_balance(db: Session, customer_id: int) -> int:
+    balance_expr = get_balance_expr()
+    bal = db.query(balance_expr).select_from(Customer).outerjoin(
+        Transaction, Customer.id == Transaction.customer_id
+    ).filter(Customer.id == customer_id).group_by(Customer.id).scalar()
+    return bal if bal is not None else 0
+
 # 11. CREATE CUSTOMER (STORE-SCOPED)
 @app.post("/api/customers", status_code=status.HTTP_201_CREATED)
 def create_customer(payload: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -656,7 +683,7 @@ def delete_customer(
 
 # --- TRANSACTION ENDPOINTS (SCOPED) ---
 
-# 16. CREATE TRANSACTION (SCOPED)
+# 16. CREATE TRANSACTION (SCOPED & IDEMPOTENT)
 @app.post("/api/transactions", status_code=status.HTTP_201_CREATED)
 def create_transaction(
     payload: dict,
@@ -668,6 +695,11 @@ def create_transaction(
     amount = payload.get("amount")
     note = payload.get("note")
     date_str = payload.get("date")
+    idempotency_key = payload.get("idempotency_key")
+    if idempotency_key:
+        idempotency_key = str(idempotency_key).strip()
+        if len(idempotency_key) > 128:
+            idempotency_key = idempotency_key[:128]
     
     if not customer_id:
         raise HTTPException(status_code=400, detail="customer_id is required.")
@@ -689,25 +721,60 @@ def create_transaction(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid date format. Use ISO format.")
             
+    # Check Idempotency Key (Store Scoped)
+    if idempotency_key:
+        existing_tx = db.query(Transaction).join(Customer).filter(
+            Transaction.idempotency_key == idempotency_key,
+            Customer.store_id == current_user.store_id
+        ).first()
+        if existing_tx:
+            # Check if payload parameters match
+            if existing_tx.customer_id == customer_id and existing_tx.type == tx_type and existing_tx.amount == amount:
+                current_bal = get_customer_balance(db, customer_id)
+                return {
+                    "id": existing_tx.id,
+                    "customer_id": existing_tx.customer_id,
+                    "customer_name": customer.name,
+                    "type": existing_tx.type,
+                    "amount": existing_tx.amount,
+                    "note": existing_tx.note,
+                    "date": existing_tx.date,
+                    "idempotency_key": existing_tx.idempotency_key,
+                    "current_balance": current_bal,
+                    "idempotent_replay": True
+                }
+            else:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Idempotency key reused with different transaction parameters."
+                )
+
     new_tx = Transaction(
         customer_id=customer_id,
         created_by_user_id=current_user.id,
         type=tx_type,
         amount=amount,
         note=note.strip() if note else None,
-        date=tx_date
+        date=tx_date,
+        idempotency_key=idempotency_key
     )
     db.add(new_tx)
     db.commit()
     db.refresh(new_tx)
     
+    current_bal = get_customer_balance(db, customer_id)
+    
     return {
         "id": new_tx.id,
         "customer_id": new_tx.customer_id,
+        "customer_name": customer.name,
         "type": new_tx.type,
         "amount": new_tx.amount,
         "note": new_tx.note,
-        "date": new_tx.date
+        "date": new_tx.date,
+        "idempotency_key": new_tx.idempotency_key,
+        "current_balance": current_bal,
+        "idempotent_replay": False
     }
 
 # 17. GET TRANSACTIONS FOR CUSTOMER (SCOPED)
@@ -813,6 +880,75 @@ def delete_transaction(
     db.delete(tx)
     db.commit()
     return {"message": "Transaction deleted successfully.", "deleted_transaction": tx_data}
+
+
+# --- VOICE KHATA ENDPOINTS (AUTHENTICATED & STORE-SCOPED) ---
+
+@app.post("/api/voice/transcribe")
+async def voice_transcribe(
+    request: Request,
+    language: str = Query("te"),
+    x_mock_transcript: Optional[str] = Header(None),
+    current_user: User = Depends(get_current_user)
+):
+    check_voice_rate_limit(current_user.id)
+    
+    if x_mock_transcript:
+        return {
+            "transcript": x_mock_transcript.strip(),
+            "language": language,
+            "provider": "mock"
+        }
+        
+    audio_bytes = await request.body()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="No audio payload provided.")
+        
+    content_type = request.headers.get("content-type", "audio/webm")
+    if ";" in content_type:
+        content_type = content_type.split(";")[0].strip()
+        
+    try:
+        result = transcribe_audio(
+            audio_bytes=audio_bytes,
+            content_type=content_type,
+            language_hint=language,
+            mock_transcript=None
+        )
+        return result
+    except SpeechServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Audio transcription failed.")
+
+
+@app.post("/api/voice/parse")
+def voice_parse(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    check_voice_rate_limit(current_user.id)
+    transcript = payload.get("transcript")
+    if not transcript or not transcript.strip():
+        raise HTTPException(status_code=400, detail="Transcript is required.")
+        
+    language = payload.get("language", "te")
+    
+    # 1. AI extraction to draft
+    draft = extract_transaction_draft(transcript=transcript.strip(), language=language)
+    
+    # 2. Store-scoped customer matching
+    cust_match = match_customer(
+        db=db,
+        store_id=current_user.store_id,
+        spoken_name=draft.customer_name_spoken
+    )
+    
+    return {
+        "draft": draft.model_dump(),
+        "customer_match": cust_match
+    }
 
 
 # --- DASHBOARD & UTILITY ENDPOINTS ---

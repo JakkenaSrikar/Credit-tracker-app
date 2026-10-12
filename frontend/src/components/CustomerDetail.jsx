@@ -198,9 +198,13 @@ export default function CustomerDetail({
   const handleUndo = async () => {
     if (!undoTx) return;
     try {
+      const undoPayload = {
+        ...undoTx,
+        idempotency_key: 'undo_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9)
+      };
       await apiRequest('/api/transactions', {
         method: 'POST',
-        body: JSON.stringify(undoTx)
+        body: JSON.stringify(undoPayload)
       });
       setUndoTx(null);
       setUndoCountdown(0);

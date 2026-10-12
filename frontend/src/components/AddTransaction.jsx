@@ -57,7 +57,8 @@ export default function AddTransaction({ customerId, txType, onBack, onTransacti
           type: txType, // "credit" or "payment"
           amount: paiseAmount,
           note: note.trim() || null,
-          date: isoDate
+          date: isoDate,
+          idempotency_key: 'tx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9)
         })
       });
 

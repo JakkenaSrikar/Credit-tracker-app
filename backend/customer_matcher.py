@@ -49,7 +49,8 @@ def match_customer(db: Session, store_id: int, spoken_name: Optional[str]) -> Di
         return {
             "matched_customer": None,
             "candidates": [],
-            "clarification_required": True
+            "clarification_required": True,
+            "suggested_new_customer": raw_spoken.title()
         }
 
     exact_matches = []
@@ -86,14 +87,16 @@ def match_customer(db: Session, store_id: int, spoken_name: Optional[str]) -> Di
         return {
             "matched_customer": {"id": c.id, "name": c.name, "phone": c.phone},
             "candidates": [],
-            "clarification_required": False
+            "clarification_required": False,
+            "suggested_new_customer": None
         }
     elif len(exact_matches) > 1:
         # Multiple identical names (e.g. two "Ramesh" with different phones)
         return {
             "matched_customer": None,
             "candidates": [{"id": c.id, "name": c.name, "phone": c.phone} for c in exact_matches],
-            "clarification_required": True
+            "clarification_required": True,
+            "suggested_new_customer": None
         }
 
     if len(partial_matches) == 1:
@@ -101,18 +104,21 @@ def match_customer(db: Session, store_id: int, spoken_name: Optional[str]) -> Di
         return {
             "matched_customer": {"id": c.id, "name": c.name, "phone": c.phone},
             "candidates": [],
-            "clarification_required": False
+            "clarification_required": False,
+            "suggested_new_customer": None
         }
     elif len(partial_matches) > 1:
         return {
             "matched_customer": None,
             "candidates": [{"id": c.id, "name": c.name, "phone": c.phone} for c in partial_matches[:5]],
-            "clarification_required": True
+            "clarification_required": True,
+            "suggested_new_customer": raw_spoken.title()
         }
 
-    # No match found - return empty candidates so user can select from search or create customer
+    # No match found - suggest creating new profile with spoken name
     return {
         "matched_customer": None,
         "candidates": [],
-        "clarification_required": True
+        "clarification_required": True,
+        "suggested_new_customer": raw_spoken.title()
     }

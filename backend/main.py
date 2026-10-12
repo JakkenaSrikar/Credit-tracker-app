@@ -704,12 +704,29 @@ def create_transaction(
         if len(idempotency_key) > 128:
             idempotency_key = idempotency_key[:128]
     
-    if not customer_id:
-        raise HTTPException(status_code=400, detail="customer_id is required.")
-        
-    customer = db.query(Customer).filter(Customer.id == customer_id, Customer.store_id == current_user.store_id).first()
+    customer_name = payload.get("customer_name")
+    customer = None
+    if customer_id and customer_id != "new":
+        customer = db.query(Customer).filter(Customer.id == customer_id, Customer.store_id == current_user.store_id).first()
+    elif customer_name and str(customer_name).strip():
+        clean_name = str(customer_name).strip()
+        customer = db.query(Customer).filter(
+            Customer.store_id == current_user.store_id,
+            func.lower(Customer.name) == clean_name.lower()
+        ).first()
+        if not customer:
+            customer = Customer(
+                store_id=current_user.store_id,
+                name=clean_name.title(),
+                phone=payload.get("phone")
+            )
+            db.add(customer)
+            db.commit()
+            db.refresh(customer)
+        customer_id = customer.id
+
     if not customer:
-        raise HTTPException(status_code=404, detail="Customer not found.")
+        raise HTTPException(status_code=400, detail="Valid customer_id or customer_name is required.")
         
     if tx_type not in ["credit", "payment"]:
         raise HTTPException(status_code=400, detail="Transaction type must be 'credit' or 'payment'.")

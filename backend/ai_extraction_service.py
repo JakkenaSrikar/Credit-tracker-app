@@ -114,28 +114,52 @@ def parse_with_rules(transcript: str) -> VoiceDraft:
     if cust_match:
         customer_name = cust_match.group(1).strip()
     else:
-        # Fallback: First word if not a keyword or number
+        # Fallback: Capture words before grocery items, numbers, units or transaction keywords
+        GROCERY_KEYWORDS = [
+            "ulligadda", "vulligadda", "ulli", "aloo", "aloo gadda", "bangaladumpa", "biyyam", "rice",
+            "pappu", "nune", "oil", "sabbu", "soap", "bellam", "panchadara", "sugar", "tamata", "mirchi",
+            "mirapakayalu", "atta", "rava", "tea", "milk", "paalu", "curd", "perugu", "salt", "uppu",
+            "ఉల్లిగడ్డ", "ఆలూ", "బియ్యం", "పప్పు", "నూనె", "సబ్బు", "బెల్లం", "పంచదార", "టమాటా", "పాలు"
+        ]
         words = cleaned.split()
-        if words:
-            first_word = words[0].strip()
-            if not first_word.isdigit() and first_word.lower() not in (CREDIT_KEYWORDS + PAYMENT_KEYWORDS + ["hello", "namaste", "hai"]):
-                customer_name = first_word
+        name_words = []
+        for w in words:
+            wl = w.lower()
+            if any(char.isdigit() for char in wl) or wl in (CREDIT_KEYWORDS + PAYMENT_KEYWORDS + GROCERY_KEYWORDS + UNIT_KEYWORDS + ["hello", "namaste", "hai", "and", "total", "mottam"]):
+                break
+            name_words.append(w)
+            if len(name_words) >= 2:  # Support surname + given name (e.g. Ganta Ramesh)
+                break
+        if name_words:
+            customer_name = " ".join(name_words).title()
 
     # 4. Extract Items & Quantities
     items: List[ItemDetail] = []
-    # Pattern: [number] [unit] [item name] or [item name] [number] [unit]
-    item_pattern = r'([0-9]+(?:\.[0-9]+)?)\s*([a-zA-Z\u0C00-\u0C7F]+)?\s+([a-zA-Z\u0C00-\u0C7F]+)'
-    for m in re.finditer(item_pattern, lower):
-        qty = m.group(1)
-        pot_unit = m.group(2) or ""
-        pot_name = m.group(3)
-        if pot_unit in UNIT_KEYWORDS and pot_name not in (CREDIT_KEYWORDS + PAYMENT_KEYWORDS + ["rupees", "rs", "rupayalu"]):
-            items.append(ItemDetail(name=pot_name, quantity=qty, unit=pot_unit))
+    # Pattern A: [item] [qty] [unit] e.g. "ulligadda 1 kg", "aloo gadda 0.5 kg"
+    pattern_a = r'([a-zA-Z\u0C00-\u0C7F]+(?:\s+[a-zA-Z\u0C00-\u0C7F]+)?)\s+([0-9]+(?:\.[0-9]+)?|half|ardha|pavu)\s*([a-zA-Z\u0C00-\u0C7F]+)?'
+    for m in re.finditer(pattern_a, lower):
+        pot_name = m.group(1).strip()
+        pot_qty = m.group(2)
+        pot_unit = m.group(3) or ""
+        if pot_qty == "half" or pot_qty == "ardha": pot_qty = "0.5"
+        elif pot_qty == "pavu": pot_qty = "0.25"
+        if pot_unit in UNIT_KEYWORDS and pot_name.lower() not in (CREDIT_KEYWORDS + PAYMENT_KEYWORDS + ["rupees", "rs", "rupayalu", "total", "mottam"]):
+            items.append(ItemDetail(name=pot_name.capitalize(), quantity=pot_qty, unit=pot_unit))
+
+    # Pattern B: [qty] [unit] [item] e.g. "1 kg rice", "2 packet sabbu"
+    if not items:
+        pattern_b = r'([0-9]+(?:\.[0-9]+)?)\s*([a-zA-Z\u0C00-\u0C7F]+)?\s+([a-zA-Z\u0C00-\u0C7F]+)'
+        for m in re.finditer(pattern_b, lower):
+            qty = m.group(1)
+            pot_unit = m.group(2) or ""
+            pot_name = m.group(3)
+            if pot_unit in UNIT_KEYWORDS and pot_name not in (CREDIT_KEYWORDS + PAYMENT_KEYWORDS + ["rupees", "rs", "rupayalu"]):
+                items.append(ItemDetail(name=pot_name.capitalize(), quantity=qty, unit=pot_unit))
 
     # Generate note string from items if present
     note = None
     if items:
-        note_parts = [f"{it.name.capitalize()} ({it.quantity or ''} {it.unit or ''})".strip() for it in items]
+        note_parts = [f"{it.name} ({it.quantity or ''} {it.unit or ''})".strip() for it in items]
         note = ", ".join(note_parts)
 
     missing_fields = []
@@ -173,29 +197,48 @@ def extract_transaction_draft(transcript: str, language: str = "te") -> VoiceDra
             # Optional LLM completion path
             import urllib.request
             
-            prompt = f"""
-You are an AI assistant for an Indian Kirana shop voice ledger. Extract the transaction draft from this spoken text:
-"{transcript}"
+            sys_prompt = """You are an expert AI transaction extractor for an Indian Kirana (grocery) shop voice ledger app in Telangana and Andhra Pradesh.
+The shopkeeper speaks naturally in Telugu, mixed Telugu-English, or Hindi.
 
-Output valid JSON matching this exact schema:
-{{
-  "customer_name_spoken": "name or null",
+Vocabulary & Context:
+1. Customer Names:
+   - Telugu names often include surname + given name, e.g. "Ganta Ramesh", "Jakkena Srikar", "Kotha Suresh", or single names "Ramesh", "Suresh", "Anitha".
+   - Suffixes like "ki", "ku", "gaaru", "garu", "se", "ne" are grammatical particles, NOT part of the name.
+2. Common Telugu Grocery items:
+   - ulligadda / vulligadda / ulli = Onion
+   - aloo gadda / aloo / bangaladumpa = Potato
+   - biyyam = Rice
+   - pappu / kandi pappu = Dal / Pulses
+   - nune / oil = Cooking Oil
+   - sabbu = Soap
+   - bellam = Jaggery
+   - panchadara / chekkara = Sugar
+   - tamata = Tomato
+   - atta, rava, tea podi, mirapakayalu / mirchi, paalu, perugu, uppu.
+3. Quantities:
+   - 1kg, 2kg, half kg (0.5 kg), pavu kg (0.25 kg), muppavu kg (0.75 kg), packet, litre.
+4. Transaction Type:
+   - "credit" (UDHARA / APPU): udhar, udhara, appu, baaki, credit, rayi, rayee, rayandi, खाता, అప్పు, ఉధార, రాయండి.
+   - "payment" (JAMA / VASOOL): payment, paid, jama, kattadu, kattaru, chellimpu, vasool, ichadu, చెల్లింపు, జమ, కట్టాడు.
+5. Amount:
+   - Extract numerical amount in rupees (e.g. 250 rs -> 250.0).
+
+Return ONLY valid JSON:
+{
+  "customer_name_spoken": "Ganta Ramesh",
   "transaction_type": "credit" or "payment" or null,
   "amount_rupees": float or null,
-  "items": [{{"name": "...", "quantity": "...", "unit": "..."}}],
-  "note": "optional summary of items or null"
-}}
-
-Rules:
-- If unclear whether credit or payment, transaction_type must be null.
-- Preserve explicit amounts spoken. Never invent prices or amounts.
-- Never guess a customer if not spoken.
-"""
+  "items": [{"name": "Item Name", "quantity": "1", "unit": "kg"}],
+  "note": "Itemized summary of items or note"
+}"""
             url = "https://api.groq.com/openai/v1/chat/completions" if provider == "groq" else "https://api.openai.com/v1/chat/completions"
-            model = "llama-3.3-70b-versatile" if provider == "groq" else "gpt-4o-mini"
+            model = "qwen/qwen3.8-27b" if provider == "groq" else "gpt-4o-mini"
             req_data = {
                 "model": model,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": [
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": transcript}
+                ],
                 "temperature": 0.0,
                 "response_format": {"type": "json_object"}
             }
@@ -208,7 +251,7 @@ Rules:
                     "User-Agent": "KiranaKhataApp/1.0"
                 }
             )
-            with urllib.request.urlopen(req, timeout=8) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:
                 resp_json = json.loads(resp.read().decode("utf-8"))
                 content = resp_json["choices"][0]["message"]["content"]
                 parsed = json.loads(content)

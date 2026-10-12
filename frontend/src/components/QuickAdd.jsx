@@ -5,7 +5,7 @@ import { useVoiceRecorder } from '../useVoiceRecorder';
 import { 
   ArrowLeft, Search, Plus, Save, IndianRupee, FileText, 
   Mic, Square, X, CheckCircle, AlertCircle, RefreshCw, 
-  Edit3, User, Tag, Sparkles, WifiOff
+  Edit3, User, UserPlus, Tag, Sparkles, WifiOff
 } from 'lucide-react';
 
 export default function QuickAdd({ language, initialCustomer, onBack, onTransactionSuccess, offlineQueue, setOfflineQueue }) {
@@ -29,6 +29,7 @@ export default function QuickAdd({ language, initialCustomer, onBack, onTransact
   const [isEditingTranscript, setIsEditingTranscript] = useState(false);
   const [selectedCust, setSelectedCust] = useState(initialCustomer || null); // { id, name, phone }
   const [customerCandidates, setCustomerCandidates] = useState([]);
+  const [spokenCustomerName, setSpokenCustomerName] = useState('');
   const [txType, setTxType] = useState('credit'); // 'credit' | 'payment'
   const [amount, setAmount] = useState('');
   const [itemsList, setItemsList] = useState([]);
@@ -173,6 +174,7 @@ export default function QuickAdd({ language, initialCustomer, onBack, onTransact
 
       setItemsList(draft.items || []);
       setNote(draft.note || '');
+      setSpokenCustomerName(draft.customer_name_spoken || custMatch.suggested_new_customer || '');
 
       // Customer resolution
       if (custMatch.matched_customer) {
@@ -183,10 +185,16 @@ export default function QuickAdd({ language, initialCustomer, onBack, onTransact
         setSelectedCust(null);
         setCustomerCandidates(custMatch.candidates);
         setVoiceState('clarify_customer');
+      } else if (custMatch.suggested_new_customer || draft.customer_name_spoken) {
+        // Automatically suggest creating new customer profile!
+        const spokenName = custMatch.suggested_new_customer || draft.customer_name_spoken;
+        setSelectedCust({ id: 'new', name: spokenName, phone: '', isNew: true });
+        setCustomerCandidates([]);
+        setVoiceState('review');
       } else {
         setSelectedCust(null);
         setCustomerCandidates([]);
-        setVoiceState('review'); // User will pick customer manually on review screen
+        setVoiceState('review');
       }
 
       // Auto-focus amount if missing
@@ -215,7 +223,7 @@ export default function QuickAdd({ language, initialCustomer, onBack, onTransact
   const handleConfirmTransaction = async () => {
     setVoiceError('');
 
-    if (!selectedCust) {
+    if (!selectedCust || !selectedCust.name) {
       setVoiceError(t.no_customer_matched);
       return;
     }
@@ -230,36 +238,57 @@ export default function QuickAdd({ language, initialCustomer, onBack, onTransact
     const paise = Math.round(parsedAmt * 100);
     const key = generateIdempotencyKey();
 
-    const txPayload = {
-      customer_id: selectedCust.id,
-      type: txType,
-      amount: paise,
-      note: note.trim() || null,
-      date: new Date().toISOString(),
-      idempotency_key: key
-    };
+    setVoiceState('saving');
+    try {
+      let finalCustomerId = selectedCust.id;
 
-    if (!navigator.onLine) {
-      // Save to offline queue
-      const queue = JSON.parse(localStorage.getItem('offline_tx_queue') || '[]');
-      queue.push(txPayload);
-      localStorage.setItem('offline_tx_queue', JSON.stringify(queue));
-      setOfflineQueue(prev => [...prev, txPayload]);
+      // Auto-create customer profile if new!
+      if (selectedCust.isNew || selectedCust.id === 'new') {
+        try {
+          const createRes = await apiRequest('/api/customers', {
+            method: 'POST',
+            body: JSON.stringify({
+              name: selectedCust.name.trim(),
+              phone: selectedCust.phone ? selectedCust.phone.trim() : null
+            })
+          });
+          if (createRes && createRes.data) {
+            finalCustomerId = createRes.data.id;
+          }
+        } catch (createErr) {
+          console.warn("Auto-create customer note:", createErr);
+        }
+      }
 
-      setSavedResult({
+      const txPayload = {
+        customer_id: finalCustomerId !== 'new' ? finalCustomerId : undefined,
         customer_name: selectedCust.name,
         type: txType,
         amount: paise,
-        current_balance: null,
-        offline: true
-      });
-      setVoiceState('success');
-      onTransactionSuccess();
-      return;
-    }
+        note: note.trim() || null,
+        date: new Date().toISOString(),
+        idempotency_key: key
+      };
 
-    setVoiceState('saving');
-    try {
+      if (!navigator.onLine) {
+        // Save to offline queue
+        const queue = JSON.parse(localStorage.getItem('offline_tx_queue') || '[]');
+        queue.push(txPayload);
+        localStorage.setItem('offline_tx_queue', JSON.stringify(queue));
+        setOfflineQueue(prev => [...prev, txPayload]);
+
+        setSavedResult({
+          customer_name: selectedCust.name,
+          type: txType,
+          amount: paise,
+          current_balance: null,
+          offline: true
+        });
+        setVoiceState('success');
+        onTransactionSuccess();
+        return;
+      }
+
       const { data } = await apiRequest('/api/transactions', {
         method: 'POST',
         body: JSON.stringify(txPayload)
@@ -559,6 +588,23 @@ export default function QuickAdd({ language, initialCustomer, onBack, onTransact
               </div>
               <p className="text-xs text-gray-500">{t.candidate_customers}</p>
 
+              {spokenCustomerName && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedCust({ id: 'new', name: spokenCustomerName, phone: '', isNew: true });
+                    setVoiceState('review');
+                  }}
+                  className="w-full py-2.5 px-3.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-2xl flex items-center justify-between border border-emerald-200 btn-tactile shadow-xs"
+                >
+                  <div className="flex items-center gap-2">
+                    <UserPlus className="w-4 h-4 text-emerald-600" />
+                    <span>{language === 'te' ? 'కొత్త కస్టమర్‌గా తెరవండి' : 'Create as new customer'}: "{spokenCustomerName}"</span>
+                  </div>
+                  <span className="text-[10px] uppercase font-black bg-emerald-200 px-2 py-0.5 rounded text-emerald-900">New Profile</span>
+                </button>
+              )}
+
               <div className="space-y-2 max-h-60 overflow-y-auto">
                 {customerCandidates.map(c => (
                   <div
@@ -627,8 +673,21 @@ export default function QuickAdd({ language, initialCustomer, onBack, onTransact
                 {selectedCust ? (
                   <div className="flex justify-between items-center">
                     <div>
-                      <span className="text-base font-extrabold text-gray-900">{selectedCust.name}</span>
-                      {selectedCust.phone && <span className="text-xs text-gray-400 block">{selectedCust.phone}</span>}
+                      <div className="flex items-center gap-2">
+                        <span className="text-base font-extrabold text-gray-900">{selectedCust.name}</span>
+                        {selectedCust.isNew && (
+                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            ✨ New Customer
+                          </span>
+                        )}
+                      </div>
+                      {selectedCust.isNew ? (
+                        <span className="text-[11px] text-emerald-600 font-semibold block mt-0.5">
+                          {language === 'te' ? 'కొత్త కస్టమర్ ప్రొఫైల్ సృష్టించబడుతుంది' : 'New customer profile will be created'}
+                        </span>
+                      ) : (
+                        selectedCust.phone && <span className="text-xs text-gray-400 block">{selectedCust.phone}</span>
+                      )}
                     </div>
                     <CheckCircle className="w-5 h-5 text-green-500" />
                   </div>
@@ -644,6 +703,16 @@ export default function QuickAdd({ language, initialCustomer, onBack, onTransact
                         className="w-full bg-white border border-gray-200 rounded-xl py-2 pl-9 pr-3 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                       />
                     </div>
+                    {customerSearch.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCust({ id: 'new', name: customerSearch.trim(), phone: '', isNew: true })}
+                        className="w-full py-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-xl flex items-center justify-between border border-emerald-200 btn-tactile"
+                      >
+                        <span>➕ {language === 'te' ? 'కొత్త ఖాతా తెరవండి' : 'Create profile'}: "{customerSearch.trim()}"</span>
+                        <span className="text-[10px] uppercase font-black bg-emerald-200 px-1.5 py-0.5 rounded text-emerald-900">New Profile</span>
+                      </button>
+                    )}
                     <div className="max-h-36 overflow-y-auto divide-y divide-gray-100 border border-gray-150 rounded-xl bg-white">
                       {filteredCustomers.length === 0 ? (
                         <div className="p-3 text-center text-xs text-gray-400 italic">{t.no_customers}</div>

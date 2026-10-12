@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiRequest } from '../api';
-import { Search, UserPlus, ArrowUpDown, Smartphone, Download, Settings as SettingsIcon, Zap, ChevronDown, ChevronUp, Mic } from 'lucide-react';
+import { Search, UserPlus, ArrowUpDown, Smartphone, Download, Settings as SettingsIcon, Zap, ChevronDown, ChevronUp, Mic, Sparkles } from 'lucide-react';
 import { translations } from '../i18n';
 
 export default function Dashboard({
@@ -202,6 +202,43 @@ export default function Dashboard({
       {/* Main Content Area */}
       <div className="max-w-md mx-auto p-4 space-y-4">
         
+        {/* Hero AI Voice Khata Card */}
+        <div
+          onClick={() => onNavigate('quick_add')}
+          className="bg-gradient-to-br from-indigo-600 via-indigo-700 to-indigo-900 text-white rounded-3xl p-5 shadow-xl shadow-indigo-600/25 cursor-pointer active:scale-[0.98] transition-all relative overflow-hidden border border-indigo-400/30 group hover:shadow-2xl"
+        >
+          {/* Ambient glow decoration */}
+          <div className="absolute -top-12 -right-12 w-36 h-36 bg-white/10 rounded-full blur-2xl pointer-events-none group-hover:scale-125 transition-transform" />
+          <div className="absolute -bottom-10 -left-10 w-28 h-28 bg-indigo-400/20 rounded-full blur-xl pointer-events-none" />
+
+          <div className="flex items-center justify-between gap-4 relative z-10">
+            <div className="space-y-1.5 flex-1">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/15 text-[11px] font-extrabold tracking-wide uppercase text-indigo-100 border border-white/20">
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>AI Voice Khata</span>
+              </div>
+              <h3 className="text-xl font-black text-white tracking-tight">
+                {t.speak_tx}
+              </h3>
+              <p className="text-xs text-indigo-100/90 font-medium leading-relaxed">
+                {t.voice_example_prompt || "e.g. Ramesh ki 150 rupees udhar"}
+              </p>
+              <div className="pt-0.5 flex items-center gap-1.5 text-[11px] text-indigo-200/95 font-bold">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>{language === 'te' ? 'నొక్కి మాట్లాడండి — ఆటోమేటిక్‌గా సేవ్ అవుతుంది' : 'Tap to speak — Auto-matches & saves instantly'}</span>
+              </div>
+            </div>
+
+            {/* Glowing Big Microphone Button */}
+            <div className="relative flex-shrink-0">
+              <span className="absolute -inset-2 rounded-full bg-white/25 animate-ping opacity-75"></span>
+              <div className="w-16 h-16 bg-white text-indigo-600 rounded-2xl flex items-center justify-center shadow-2xl transform group-hover:scale-105 transition-all">
+                <Mic className="w-8 h-8 text-indigo-600" />
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Today's Closing Summary (Collapsible) */}
         {todaySummary && (
           <div className="bg-white rounded-3xl border border-gray-150 shadow-sm overflow-hidden">
@@ -320,13 +357,26 @@ export default function Dashboard({
                       <span className="text-xs text-gray-400 italic">No phone number</span>
                     )}
                   </div>
-                  <div className="text-right">
-                    <span className={`text-lg ${getBalanceStyle(c.balance)}`}>
-                      {formatRupees(c.balance)}
-                    </span>
-                    <span className="block text-[10px] uppercase font-bold tracking-wider text-gray-400 mt-0.5">
-                      {c.balance > 0 ? t.owes_shop : c.balance < 0 ? t.overpaid : t.settled}
-                    </span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onNavigate('quick_add', { id: c.id, name: c.name, phone: c.phone });
+                      }}
+                      className="w-10 h-10 rounded-2xl bg-indigo-50 hover:bg-indigo-100 text-indigo-600 flex items-center justify-center btn-tactile border border-indigo-150 shadow-xs"
+                      title={`${t.speak_tx} (${c.name})`}
+                    >
+                      <Mic className="w-4 h-4 text-indigo-600" />
+                    </button>
+                    <div className="text-right min-w-[70px]">
+                      <span className={`text-lg ${getBalanceStyle(c.balance)}`}>
+                        {formatRupees(c.balance)}
+                      </span>
+                      <span className="block text-[10px] uppercase font-bold tracking-wider text-gray-400 mt-0.5">
+                        {c.balance > 0 ? t.owes_shop : c.balance < 0 ? t.overpaid : t.settled}
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -335,14 +385,27 @@ export default function Dashboard({
         </div>
       </div>
 
-      {/* Floating Action Button */}
-      <div className="fixed bottom-6 right-6 z-10">
+      {/* Floating Action Buttons */}
+      <div className="fixed bottom-6 inset-x-0 max-w-md mx-auto px-4 z-20 flex items-center justify-between pointer-events-none">
         <button
           onClick={() => onNavigate('add_customer')}
-          className="w-14 h-14 bg-indigo-600 text-white rounded-full shadow-2xl flex items-center justify-center btn-tactile hover:bg-indigo-700 active:scale-95 transition-all"
+          className="pointer-events-auto h-12 px-4 bg-white/95 backdrop-blur border border-gray-200 text-gray-700 rounded-2xl shadow-xl flex items-center gap-2 btn-tactile hover:bg-gray-50 active:scale-95 transition-all text-xs font-black"
           title={t.add_customer}
         >
-          <UserPlus className="w-6 h-6" />
+          <UserPlus className="w-4 h-4 text-indigo-600" />
+          <span>{t.add_customer}</span>
+        </button>
+
+        <button
+          onClick={() => onNavigate('quick_add')}
+          className="pointer-events-auto h-13 px-5 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-2xl shadow-2xl shadow-indigo-600/40 flex items-center gap-2 btn-tactile hover:from-indigo-700 hover:to-indigo-800 active:scale-95 transition-all text-sm font-black group"
+          title={t.speak_tx}
+        >
+          <div className="relative">
+            <span className="absolute -inset-1 rounded-full bg-white/30 animate-ping opacity-60"></span>
+            <Mic className="w-5 h-5 text-white" />
+          </div>
+          <span>{t.speak_tx}</span>
         </button>
       </div>
     </div>

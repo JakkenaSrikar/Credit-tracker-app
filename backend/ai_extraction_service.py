@@ -8,6 +8,8 @@ import os
 import re
 import json
 from typing import Optional, List, Dict, Any
+from dotenv import load_dotenv
+load_dotenv()
 from pydantic import BaseModel, Field
 
 class ItemDetail(BaseModel):

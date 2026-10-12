@@ -11,10 +11,16 @@ import sys
 
 def run_tests():
     print("Starting Voice Khata test suite...")
-    db_path = "c:/Srikar/Khata App/backend/udhara.db"
+    db_path = "c:/Srikar/Khata App/backend/test_udhara.db"
     if os.path.exists(db_path):
-        os.remove(db_path)
-        print("Removed existing test database.")
+        try:
+            os.remove(db_path)
+            print("Removed existing test database.")
+        except Exception:
+            pass
+
+    test_env = os.environ.copy()
+    test_env["DATABASE_URL"] = "sqlite:///./test_udhara.db"
 
     cmd = [
         "c:/Srikar/Khata App/backend/.venv/Scripts/python.exe",
@@ -26,7 +32,8 @@ def run_tests():
     
     server_process = subprocess.Popen(
         cmd,
-        cwd="c:/Srikar/Khata App/backend"
+        cwd="c:/Srikar/Khata App/backend",
+        env=test_env
     )
     
     time.sleep(3)

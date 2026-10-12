@@ -6,7 +6,13 @@ Never leaks provider credentials to clients.
 """
 import os
 import tempfile
+import urllib.request
+import urllib.error
+import mimetypes
+import json
 from typing import Dict, Any, Optional
+from dotenv import load_dotenv
+load_dotenv()
 
 ALLOWED_CONTENT_TYPES = {
     "audio/webm",
@@ -66,15 +72,12 @@ def transcribe_audio(
     provider = os.getenv("SPEECH_PROVIDER", "").lower()
     api_key = os.getenv("SPEECH_API_KEY") or os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY")
 
-    # If no provider or API key is set, check if development mock is enabled
+    # If no provider or API key is set, fail with clear actionable error
     if not api_key:
-        # Development / Offline Fallback Notice
-        return {
-            "transcript": "",
-            "language": language_hint,
-            "provider": "unconfigured",
-            "message": "Speech provider API key not configured on server. Please use manual entry or configure SPEECH_API_KEY."
-        }
+        raise SpeechServiceError(
+            "Speech provider API key is not configured on the server. Please add GROQ_API_KEY to your environment variables.",
+            status_code=500
+        )
 
     # Determine file extension for temporary file
     ext = ".webm"
@@ -138,7 +141,7 @@ def _transcribe_groq(file_path: str, api_key: str, language_hint: str) -> Dict[s
     data.append(f"--{boundary}".encode())
     data.append(b'Content-Disposition: form-data; name="prompt"')
     data.append(b'')
-    data.append(b'Kirana shop udhara credit transaction in Telugu, Hindi and English.')
+    data.append(b'Kirana shop credit/udhara transaction. Names: Ramesh, Suresh, Anitha, Ravi, Mahesh. Phrases: udhar, credit, payment, jama, appu, chellimpu, rupees, rupayalu, 100, 200, 500.')
 
     # file field
     with open(file_path, "rb") as f:
@@ -164,13 +167,18 @@ def _transcribe_groq(file_path: str, api_key: str, language_hint: str) -> Dict[s
         }
     )
 
-    with urllib.request.urlopen(req, timeout=12) as response:
-        result = json.loads(response.read().decode("utf-8"))
-        return {
-            "transcript": result.get("text", "").strip(),
-            "language": language_hint,
-            "provider": "groq"
-        }
+    try:
+        with urllib.request.urlopen(req, timeout=15) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            return {
+                "transcript": result.get("text", "").strip(),
+                "language": language_hint,
+                "provider": "groq"
+            }
+    except urllib.error.HTTPError as he:
+        err_body = he.read().decode("utf-8", errors="ignore")
+        print(f"[Groq Whisper API HTTPError {he.code}]: {err_body}")
+        raise SpeechServiceError(f"Groq transcription error ({he.code}): {err_body}", status_code=502)
 
 def _transcribe_openai(file_path: str, api_key: str, language_hint: str) -> Dict[str, Any]:
     """Transcribe using OpenAI Whisper."""

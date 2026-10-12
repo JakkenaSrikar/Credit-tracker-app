@@ -92,7 +92,10 @@ export default function QuickAdd({ language, initialCustomer, onBack, onTransact
 
   const handleStopVoice = async () => {
     const audioBlob = await stopRecording();
-    if (!audioBlob) {
+    if (!audioBlob || audioBlob.size < 500) {
+      setVoiceError(language === 'te' 
+        ? "రికార్డింగ్ చాలా తక్కువ సమయం ఉంది. మైక్ నొక్కి మాట్లాడిన తర్వాత ఆపండి."
+        : "Recording was too short or empty. Please speak your transaction clearly before stopping.");
       setVoiceState('ready');
       return;
     }
@@ -118,10 +121,17 @@ export default function QuickAdd({ language, initialCustomer, onBack, onTransact
       }
 
       const transcribeData = await transcribeRes.json();
+      
+      if (transcribeData.provider === 'unconfigured') {
+        throw new Error(transcribeData.message || "Speech transcription service is not configured on the server.");
+      }
+
       const spokenText = transcribeData.transcript || '';
 
       if (!spokenText.trim()) {
-        throw new Error("Could not detect any speech. Please try speaking again clearly.");
+        throw new Error(language === 'te'
+          ? "మాటలు స్పష్టంగా వినపడలేదు. దయచేసి మైక్ దగ్గరగా మాట్లాడండి (ఉదా: 'రమేష్ కి 150 ఉధార')."
+          : "Could not detect clear speech. Please speak closer to the mic (e.g. 'Ramesh 150 rupees udhar').");
       }
 
       setTranscript(spokenText);

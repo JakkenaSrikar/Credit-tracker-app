@@ -1,5 +1,8 @@
 from datetime import datetime
 import os
+from dotenv import load_dotenv
+load_dotenv()
+
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, event, text
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
